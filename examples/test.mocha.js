@@ -11,7 +11,9 @@ describe('Selenium:', function() {
 
     // Initialize Selenium Sauce using the configuration file. The callback function will be invoked
     // once for each browser in the config.webdriver.desiredCapabilities array.
-    SeSauce.init(config, function(browser, browserComplete) {
+    new SeSauce(config, function(browser) {
+
+        var se = this;
 
         // Before any tests run, initialize the browser and load the test page.
         // Then call `done()` when finished.
@@ -39,15 +41,7 @@ describe('Selenium:', function() {
         // After all tests are done, update the SauceLabs job with the test status,
         // and close the browser.
         after(function(done) {
-            if(SeSauce.sauceLabs)
-                SeSauce.sauceLabs.updateJob(browser.requestHandler.sessionID, {
-                    passed: this.currentTest.state === 'passed',
-                    public: true
-                }, function(err, res) {
-                    browser.end(done);
-                });
-            else
-                browser.end(done);
+            browser.passed(this.currentTest.state === 'passed', done);
         });
 
     });

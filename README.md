@@ -33,35 +33,27 @@ var SeSauce = require('selenium-sauce');
 // Loads the config file and invokes the callback once for each browser
 new SeSauce(
     {   // Configuration options
-        quiet: false,           // Silences the console output
         webdriver: {            // Options for Selenium WebDriver (WebdriverIO)
-            user: process.env.SAUCE_USERNAME,
-            key: process.env.SAUCE_ACCESS_KEY,
-            desiredCapabilities: [{
-                browserName: 'chrome',
-                version: '27',
-                platform: 'XP',
-                tags: ['examples'],
-                name: 'This is an example test'
-            }]
+            sauce: {
+                desiredCapabilities: [{
+                    browserName: 'chrome',
+                    version: '27',
+                    platform: 'XP',
+                    tags: ['examples'],
+                    name: 'This is an example test'
+                }]
+            },
+            local: {
+                desiredCapabilities: [{
+                    browserName: 'phantomjs'
+                }]
+            }
         },
         httpServer: {           // Options for local http server (npmjs.org/package/http-server)
-            port: 8080              // Non-standard option; it is passed into the httpServer.listen() method
-        },
-        sauceLabs: {            // Options for SauceLabs API wrapper (npmjs.org/package/saucelabs)
-            username: process.env.SAUCE_USERNAME,
-            password: process.env.SAUCE_ACCESS_KEY
-        },
-        sauceConnect: {         // Options for SauceLabs Connect (npmjs.org/package/sauce-connect-launcher)
-            username: process.env.SAUCE_USERNAME,
-            accessKey: process.env.SAUCE_ACCESS_KEY
-        },
-        selenium: {             // Options for Selenium Standalone Server (npmjs.org/package/selenium-standalone). Only used if you need Selenium running locally.
-            args: []                // options to pass to `java -jar selenium-server-standalone-X.XX.X.jar`
+            port: 8080
         }
     },
     function(browser) {
-
         // Initialize the browser
         browser.init(function(err) {
             if(err) throw err;
@@ -87,7 +79,7 @@ $ node test.js
 
 ## About
 
-This Node.js utility is a wrapper API around a set of technologies that run Selenium tests on SauceLabs. In addition, the tests will run locally if SauceLabs info necessary is not provided.
+This Node.js utility is a wrapper API around a set of technologies that run Selenium tests on SauceLabs. In addition, the tests will run locally if SauceLabs info is not provided.
 
 Running Selenium tests on SauceLabs is not incredibly difficult, but there are a lot of moving parts:
 
@@ -95,7 +87,7 @@ Running Selenium tests on SauceLabs is not incredibly difficult, but there are a
 - SauceLabs' instances function as Selenium servers with their own set of APIs
 - Browsers on SauceLabs need access to load webpages from the same machine running the tests, which is done using Sauce Connect to establish a private network tunnel. 
 
-On top of that, developing and testing locally requires a local Selenium server, and the SauceLabs features listed above would need to be bypassed.
+On top of that, developing and testing locally requires a local Selenium server, and the SauceLabs features listed above need to be bypassed for that.
 
 **Selenium Sauce** provides a simple API that encapsulates all of these features, by reusing existing tools and orchestrating their functionality.
 Each of these utilities are transparently exposed through the Selenium Sauce interface and you can work directly with them.
@@ -116,7 +108,7 @@ See the [examples](https://github.com/alexbrombal/selenium-sauce/tree/master/exa
 
 ## Usage
 
-As mentioned in the quick start, you need to install this package with npm. This is not a binary utility, but rather a programmatic interface that you use in your unit test or other Node.js files.
+As mentioned in the quick start, you need to install this package with npm. This is not a command-line utility, but rather a programmatic interface that you use in your unit test or other Node.js files.
 
 ```bash
 $ npm install selenium-sauce
@@ -136,10 +128,11 @@ The second parameter is the callback method which is executed once for each brow
 
 ```javascript
 new SeSauce(
-	{ /* ... configuration object ... */ },
+	{
+	    /* ... configuration object ... */
+    },
 	function(browser) {
 		// function executes once for each browser
-	
 	}
 );
 ```
@@ -153,11 +146,11 @@ The `browser` object that is passed into the callback is the return value of [We
 
 Within the browser callback method, `this` refers to the Selenium Sauce instance. Through this instance, you can access the following properties:
 
-- `webdriver` - The wrapper around the Selenium WebDriver protocol. You probably won't need to use this object directly, but instead use the browser object that is passed to the "each browser" callback.
-- `sauceLabs` - The wrapper around the Sauce Labs REST API.
-- `httpServer` - The instance of [http-server](#HttpServer) that is started by SauceLabs in order for Sauce Connect to load pages on your local machine.
-- `sauceConnect` - The Sauce Connect [child process object](http://nodejs.org/api/process.html).
-- `selenium` - This is the Selenium Standalone [child process object](http://nodejs.org/api/process.html).
+- `this.webdriver` - The wrapper around the Selenium WebDriver protocol. You probably won't need to use this object directly, but instead use the browser object that is passed to the "each browser" callback.
+- `this.sauceLabs` - The wrapper around the Sauce Labs REST API.
+- `this.httpServer` - The instance of [http-server](#HttpServer) that is started by SauceLabs in order for Sauce Connect to load pages on your local machine.
+- `this.sauceConnect` - The Sauce Connect [child process object](http://nodejs.org/api/process.html).
+- `this.selenium` - This is the Selenium Standalone [child process object](http://nodejs.org/api/process.html).
 
 
 ### Configuration
@@ -168,9 +161,23 @@ The first parameter to the `SeSauce` constructor is the configuration object. Ea
 
 - `quiet:` - If true, tells Selenium Sauce to silence its console output.
 
-- `webdriver:` - Options for [WebdriverIO](#webdriverio). These options are passed directly into the `webdriverio.remote()` function.
+- `sauceUsername` - The username for SauceLabs. Defaults to `process.env.SAUCE_USERNAME`. This value is used to populate `webdriver.sauce.user`, `sauceLabs.username`, and `sauceConnect.username`; however, you may override those values individually if desired.
 
-  - `desiredCapabilities:` - *Non-standard option:* an array of desired capabilities. This differs from the standard option in that it is an array of browser capabilities rather than a single instance.
+- `sauceAccessKey` - The access key for SauceLabs. Defaults to `process.env.SAUCE_ACCESS_KEY`. This value is used to populate `webdriver.sauce.key`, `sauceLabs.password`, and `sauceConnect.accessKey`; however, you may override those values individually if desired.
+
+- `webdriver:` - Options for [WebdriverIO](#webdriverio). This object has two properties, `sauce` and `local`, which are used to connect to SauceLabs or a local Selenium instance, respectively.
+
+  - `sauce:` - This object is passed directly to WebdriverIO *only if* the `user` and `key` properties are valid.
+
+    - `user:` - The username for SauceLabs. Defaults to the value of `sauceUsername` (i.e. you do not have to specify this if you already specified `sauceUsername`).
+
+    - `key:` - The access key for SauceLabs. Defaults to the value of `sauceAccessKey` (i.e. you do not have to specify this if you already specified `sauceAccessKey`).
+
+    - `desiredCapabilities:` - *Non-standard option:* an array of desired browser capabilities. This differs from the standard option in that it is an array of browser capabilities rather than a single instance.
+
+  - `local:` - These options are passed directly to WebdriverIO if the user/key information above is empty.
+
+    - `desiredCapabilities:` - Same as above. Allows you to specify different browser capabilities when running Selenium locally.
 
 - `httpServer:` - Options for [HttpServer](#httpserver). These options are passed directly into `httpserver.createServer()`.   
 

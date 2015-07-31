@@ -7,38 +7,26 @@ if(!process.env.SAUCE_USERNAME || !process.env.SAUCE_ACCESS_KEY)
 new SeSauce({
     quiet: false,
     webdriver: {
-        host: 'ondemand.saucelabs.com',
-        port: 80,
-        user: process.env.SAUCE_USERNAME,
-        key: process.env.SAUCE_ACCESS_KEY,
-        logLevel: 'silent',
-        desiredCapabilities: [{
-            browserName: 'chrome',
-            version: '27',
-            platform: 'XP',
-            tags: ['selenium sauce'],
-            name: 'Selenium Sauce unit test'
-        }, {
-            browserName: 'firefox',
-            version: '33',
-            platform: 'XP',
-            tags: ['selenium sauce'],
-            name: 'Selenium Sauce unit test'
-        }]
+        sauce: {
+            desiredCapabilities: [{
+                browserName: 'chrome',
+                version: '27',
+                platform: 'XP',
+                tags: ['selenium sauce'],
+                name: 'Selenium Sauce unit test'
+            }, {
+                browserName: 'firefox',
+                version: '33',
+                platform: 'XP',
+                tags: ['selenium sauce'],
+                name: 'Selenium Sauce unit test'
+            }]
+        }
     },
     httpServer: {
         disable: false,
         port: 8081,
         root: __dirname
-    },
-    sauceLabs: {
-        username: process.env.SAUCE_USERNAME,
-        password: process.env.SAUCE_ACCESS_KEY
-    },
-    sauceConnect: {
-        disable: false,
-        username: process.env.SAUCE_USERNAME,
-        accessKey: process.env.SAUCE_ACCESS_KEY
     }
 }, function(browser) {
 

@@ -1,6 +1,6 @@
 {
     "name": "selenium-sauce",
-    "version": "0.3.4",
+    "version": "0.4.0",
     "description": "Easily run your Selenium tests in SauceLabs",
     "keywords": "selenium sauce saucelabs webdriverio",
     "homepage": "http://github.com/alexbrombal/selenium-sauce",
@@ -25,15 +25,15 @@
         "phantomjs": "*"
     },
     "dependencies": {
-        "colors": "^1.0.3",
-        "extend": "^2.0.0",
-        "http-server": "^0.7.2",
-        "async": "^0.9.0",
+        "colors": "^1.1.2",
+        "extend": "^3.0.0",
+        "http-server": "^0.8.0",
+        "async": "^1.4.0",
         "portscanner": "^1.0.0",
-        "sauce-connect-launcher": "^0.9.0",
+        "sauce-connect-launcher": "^0.12.0",
         "saucelabs": "^0.1.1",
-        "selenium-standalone": "2.43.1-5",
-        "webdriverio": "^2.3.0"
+        "selenium-standalone": "^4.5.3",
+        "webdriverio": "^3.1.0"
     },
     "scripts": {
         "test": "istanbul instrument -o inst lib && multi='mocha-istanbul=- spec=-' ISTANBUL_REPORTERS=lcov mocha -R mocha-multi"

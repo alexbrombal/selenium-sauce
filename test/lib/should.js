@@ -1,1799 +1,512 @@
-/**
+/*
  * should - test framework agnostic BDD-style assertions
- * @version v4.1.0
+ * @version v5.2.0
  * @author TJ Holowaychuk <tj@vision-media.ca> and contributors
  * @link https://github.com/shouldjs/should.js
  * @license MIT
  */
-!function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.Should=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
+(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Should = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
 
 
-var util = require('./util');
-var inspect = require('./inspect').inspect;
-var warn = require('./warn');
+    var util = require('./util');
 
-/**
- * Our function should
- * @param obj
- * @returns {should.Assertion}
- */
-var should = function should(obj) {
-  warn.staticShouldUnWrap(util.isWrapperType(obj) && should.warn);
+    /**
+     * Our function should
+     *
+     * @param {*} obj Object to assert
+     * @returns {should.Assertion} Returns new Assertion for beginning assertion chain
+     * @example
+     *
+     * var should = require('should');
+     * should('abc').be.a.String;
+     */
+    var should = function should(obj) {
+        return (new should.Assertion(obj)).proxied();
+    };
 
-  var unwrappedObj = util.isWrapperType(obj) ? obj.valueOf() : obj;
-  return new should.Assertion(unwrappedObj, should.format);
-};
+    should.AssertionError = require('./assertion-error');
+    should.Assertion = require('./assertion');
 
-var envVarName = 'SHOULDJS_WARN';
-var envVarResult = typeof process !== 'undefined' && process.env[envVarName] && process.env[envVarName] === 'true';
-should.warn = typeof envVarResult == 'undefined' ? true: envVarResult;
+    should.format = require('should-format');
+    should.type = require('should-type');
+    should.util = util;
 
-should.AssertionError = require('./assertion-error');
-should.Assertion = require('./assertion');
+    /**
+     * Object with configuration.
+     * It contains such properties:
+     * * `checkProtoEql` boolean - Affect if `.eql` will check objects prototypes
+     * * `useOldDeepEqual` boolean - Use old deepEqual implementation, that was copied from node's assert.deepEqual (will be removed in 5.x)
+     *
+     * @type {Object}
+     * @memberOf should
+     * @static
+     * @example
+     *
+     * var a = { a: 10 }, b = Object.create(null);
+     * b.a = 10;
+     *
+     * a.should.be.eql(b);
+     * //not throws
+     *
+     * should.config.checkProtoEql = true;
+     * a.should.be.eql(b);
+     * //throws AssertionError: expected { a: 10 } to equal { a: 10 } (because A and B have different prototypes)
+     */
+    should.config = require('./config');
 
-should.format = function(value) {
-  return inspect(value, {depth: null});
-};
+//Expose should to external world.
+    exports = module.exports = should;
 
-/**
- * Expose should to external world.
- */
-exports = module.exports = should;
+    /**
+     * Allow to extend given prototype with should property using given name. This getter will **unwrap** all standard wrappers like `Number`, `Boolean`, `String`.
+     * Using `should(obj)` is the equivalent of using `obj.should` with known issues (like nulls and method calls etc).
+     *
+     * @param {string} [propertyName] Name of property to add. Default is `'should'`.
+     * @param {Object} [proto] Prototype to extend with. Default is `Object.prototype`.
+     * @memberOf should
+     * @returns {{ name: string, descriptor: Object, proto: Object }} Descriptor enough to return all back
+     * @static
+     * @example
+     *
+     * var prev = should.extend('must', Object.prototype);
+     *
+     * 'abc'.must.startWith('a');
+     *
+     * var should = should.noConflict(prev);
+     * should.not.exist(Object.prototype.must);
+     */
+    should.extend = function(propertyName, proto) {
+        propertyName = propertyName || 'should';
+        proto = proto || Object.prototype;
 
-should.extend = function(propertyName, proto) {
-  propertyName = propertyName || 'should';
-  proto = proto || Object.prototype;
+        var prevDescriptor = Object.getOwnPropertyDescriptor(proto, propertyName);
 
-  Object.defineProperty(proto, propertyName, {
-    set: function() {
-    },
-    get: function() {
-      return should(util.isWrapperType(this) ? this.valueOf() : this);
-    },
-    configurable: true
-  });
-};
+        Object.defineProperty(proto, propertyName, {
+            set: function() {
+            },
+            get: function() {
+                return should(util.isWrapperType(this) ? this.valueOf() : this);
+            },
+            configurable: true
+        });
 
-/**
- * Expose api via `Object#should`.
+        return { name: propertyName, descriptor: prevDescriptor, proto: proto };
+    };
+
+    /**
+     * Delete previous extension. If `desc` missing it will remove default extension.
+     *
+     * @param {{ name: string, descriptor: Object, proto: Object }} [desc] Returned from `should.extend` object
+     * @memberOf should
+     * @returns {Function} Returns should function
+     * @static
+     * @example
+     *
+     * var should = require('should').noConflict();
+     *
+     * should(Object.prototype).not.have.property('should');
+     *
+     * var prev = should.extend('must', Object.prototype);
+     * 'abc'.must.startWith('a');
+     * should.noConflict(prev);
+     *
+     * should(Object.prototype).not.have.property('must');
+     */
+    should.noConflict = function(desc) {
+        desc = desc || prevShould;
+
+        if(desc) {
+            delete desc.proto[desc.name];
+
+            if(desc.descriptor) {
+                Object.defineProperty(desc.proto, desc.name, desc.descriptor);
+            }
+        }
+        return should;
+    };
+
+    /**
+     * Simple utility function for a bit more easier should assertion extension
+     * @param {Function} f So called plugin function. It should accept 2 arguments: `should` function and `Assertion` constructor
+     * @memberOf should
+     * @returns {Function} Returns `should` function
+     * @static
+     * @example
+     *
+     * should.use(function(should, Assertion) {
+ *   Assertion.add('asset', function() {
+ *      this.params = { operator: 'to be asset' };
  *
- * @api public
- */
-should.extend('should', Object.prototype);
+ *      this.obj.should.have.property('id').which.is.a.Number;
+ *      this.obj.should.have.property('path');
+ *  })
+ * })
+     */
+    should.use = function(f) {
+        f(should, should.Assertion);
+        return this;
+    };
 
-should.use = function(f) {
-  f(this, this.Assertion);
-  return this;
-};
+    should
+        .use(require('./ext/assert'))
+        .use(require('./ext/chain'))
+        .use(require('./ext/bool'))
+        .use(require('./ext/number'))
+        .use(require('./ext/eql'))
+        .use(require('./ext/type'))
+        .use(require('./ext/string'))
+        .use(require('./ext/property'))
+        .use(require('./ext/error'))
+        .use(require('./ext/match'))
+        .use(require('./ext/contain'));
 
-should
-  .use(require('./ext/assert'))
-  .use(require('./ext/chain'))
-  .use(require('./ext/bool'))
-  .use(require('./ext/number'))
-  .use(require('./ext/eql'))
-  .use(require('./ext/type'))
-  .use(require('./ext/string'))
-  .use(require('./ext/property'))
-  .use(require('./ext/error'))
-  .use(require('./ext/match'))
-  .use(require('./ext/contain'));
 
-},{"./assertion":3,"./assertion-error":2,"./ext/assert":5,"./ext/bool":6,"./ext/chain":7,"./ext/contain":8,"./ext/eql":9,"./ext/error":10,"./ext/match":11,"./ext/number":12,"./ext/property":13,"./ext/string":14,"./ext/type":15,"./inspect":16,"./util":17,"./warn":18}],2:[function(require,module,exports){
-// copy that inside
-module.exports = require('./util').AssertionError;
-},{"./util":17}],3:[function(require,module,exports){
-var AssertionError = require('./assertion-error');
+    var defaultProto = Object.prototype;
+    var defaultProperty = 'should';
 
-function Assertion(obj, format) {
-  this.obj = obj;
-  this.format = format;
-};
+//Expose api via `Object#should`.
+    var prevShould = should.extend(defaultProperty, defaultProto);
 
-/**
- Way to extend Assertion function. It uses some logic
- to define only positive assertions and itself rule with negative assertion.
+},{"./assertion":3,"./assertion-error":2,"./config":4,"./ext/assert":6,"./ext/bool":7,"./ext/chain":8,"./ext/contain":9,"./ext/eql":10,"./ext/error":11,"./ext/match":12,"./ext/number":13,"./ext/property":14,"./ext/string":15,"./ext/type":16,"./util":17,"should-format":19,"should-type":20}],2:[function(require,module,exports){
+    var util = require('./util');
+    var format = require('should-format');
 
- All actions happen in subcontext and this method take care about negation.
- Potentially we can add some more modifiers that does not depends from state of assertion.
- */
-Assertion.add = function(name, f, isGetter) {
-  var prop = {enumerable: true};
-  prop[isGetter ? 'get' : 'value'] = function() {
-    var context = new Assertion(this.obj, this.format);
-    context.anyOne = this.anyOne;
+    /**
+     * should AssertionError
+     * @param {Object} options
+     * @constructor
+     * @memberOf should
+     * @static
+     */
+    var AssertionError = function AssertionError(options) {
+        util.merge(this, options);
 
-    try {
-      f.apply(context, arguments);
-    } catch(e) {
-      //copy data from sub context to this
-      this.params = context.params;
-
-      //check for fail
-      if(e instanceof AssertionError) {
-        //negative fail
-        if(this.negate) {
-          this.obj = context.obj;
-          this.negate = false;
-          return this;
+        if(!options.message) {
+            Object.defineProperty(this, 'message', {
+                    get: function() {
+                        if(!this._message) {
+                            this._message = this.generateMessage();
+                            this.generatedMessage = true;
+                        }
+                        return this._message;
+                    },
+                    configurable: true,
+                    enumerable: false
+                }
+            )
         }
 
-        this.nestedErrorMessage = e.message;
-        //positive fail
-        this.fail();
-      }
-      // throw if it is another exception
-      throw e;
-    }
-    //copy data from sub context to this
-    this.params = context.params;
+        if(Error.captureStackTrace) {
+            Error.captureStackTrace(this, this.stackStartFunction);
+        } else {
+            // non v8 browsers so we can have a stacktrace
+            var err = new Error();
+            if(err.stack) {
+                var out = err.stack;
 
-    //negative pass
-    if(this.negate) {
+                if(this.stackStartFunction) {
+                    // try to strip useless frames
+                    var fn_name = util.functionName(this.stackStartFunction);
+                    var idx = out.indexOf('\n' + fn_name);
+                    if(idx >= 0) {
+                        // once we have located the function frame
+                        // we need to strip out everything before it (and its line)
+                        var next_line = out.indexOf('\n', idx + 1);
+                        out = out.substring(next_line + 1);
+                    }
+                }
 
-      context.negate = true;
-      this.nestedErrorMessage = context.params.message ? context.params.message : context.getMessage();
-      this.fail();
-    }
-
-    this.obj = context.obj;
-    this.negate = false;
-
-    //positive pass
-    return this;
-  };
-
-  Object.defineProperty(Assertion.prototype, name, prop);
-};
-
-Assertion.alias = function(from, to) {
-  var desc = Object.getOwnPropertyDescriptor(Assertion.prototype, from);
-  if(!desc) throw new Error('Alias ' + from + ' -> ' + to + ' could not be created as ' + from + ' not defined');
-  Object.defineProperty(Assertion.prototype, to, desc);
-};
-
-var indent = '    ';
-function prependIndent(line) {
-  return indent + line;
-}
-
-function indentLines(text) {
-  return text.split('\n').map(prependIndent).join('\n');
-}
-
-Assertion.prototype = {
-  constructor: Assertion,
-
-  assert: function(expr) {
-    if(expr) return this;
-
-    var params = this.params;
-
-    var msg = params.message, generatedMessage = false;
-    if(!msg) {
-      msg = this.getMessage();
-      generatedMessage = true;
-    }
-
-    if(this.nestedErrorMessage && msg != this.nestedErrorMessage) {
-      msg = msg + '\n' +indentLines(this.nestedErrorMessage);
-    }
-
-    var err = new AssertionError({
-      message: msg,
-      actual: this.obj,
-      expected: params.expected,
-      stackStartFunction: this.assert
-    });
-
-    err.showDiff = params.showDiff;
-    err.operator = params.operator;
-    err.generatedMessage = generatedMessage;
-
-    throw err;
-  },
-
-  fail: function() {
-    return this.assert(false);
-  },
-
-  formattedObj: function() {
-    return this.format(this.obj);
-  },
-
-  getMessage: function() {
-    var actual = 'obj' in this.params ? this.params.obj : this.formattedObj();
-    var expected = 'expected' in this.params ? ' ' + this.format(this.params.expected) : '';
-
-    return 'expected ' + actual + (this.negate ? ' not ' : ' ') + this.params.operator + (expected);
-  },
-
-
-  /**
-   * Negation modifier.
-   *
-   * @api public
-   */
-
-  get not() {
-    this.negate = !this.negate;
-    return this;
-  },
-
-  /**
-   * Any modifier - it affect on execution of sequenced assertion to do not check all, but any of
-   *
-   * @api public
-   */
-  get any() {
-    this.anyOne = true;
-    return this;
-  }
-};
-
-module.exports = Assertion;
-},{"./assertion-error":2}],4:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-// Taken from node's assert module, because it sucks
-// and exposes next to nothing useful.
-var util = require('./util');
-
-module.exports = _deepEqual;
-
-var pSlice = Array.prototype.slice;
-
-function _deepEqual(actual, expected) {
-  // 7.1. All identical values are equivalent, as determined by ===.
-  if (actual === expected) {
-    return true;
-
-  } else if (util.isBuffer(actual) && util.isBuffer(expected)) {
-    if (actual.length != expected.length) return false;
-
-    for (var i = 0; i < actual.length; i++) {
-      if (actual[i] !== expected[i]) return false;
-    }
-
-    return true;
-
-  // 7.2. If the expected value is a Date object, the actual value is
-  // equivalent if it is also a Date object that refers to the same time.
-  } else if (util.isDate(actual) && util.isDate(expected)) {
-    return actual.getTime() === expected.getTime();
-
-  // 7.3 If the expected value is a RegExp object, the actual value is
-  // equivalent if it is also a RegExp object with the same source and
-  // properties (`global`, `multiline`, `lastIndex`, `ignoreCase`).
-  } else if (util.isRegExp(actual) && util.isRegExp(expected)) {
-    return actual.source === expected.source &&
-           actual.global === expected.global &&
-           actual.multiline === expected.multiline &&
-           actual.lastIndex === expected.lastIndex &&
-           actual.ignoreCase === expected.ignoreCase;
-
-  // 7.4. Other pairs that do not both pass typeof value == 'object',
-  // equivalence is determined by ==.
-  } else if (!util.isObject(actual) && !util.isObject(expected)) {
-    return actual == expected;
-
-  // 7.5 For all other Object pairs, including Array objects, equivalence is
-  // determined by having the same number of owned properties (as verified
-  // with Object.prototype.hasOwnProperty.call), the same set of keys
-  // (although not necessarily the same order), equivalent values for every
-  // corresponding key, and an identical 'prototype' property. Note: this
-  // accounts for both named and indexed properties on Arrays.
-  } else {
-    return objEquiv(actual, expected);
-  }
-}
-
-
-function objEquiv (a, b) {
-  if (util.isNullOrUndefined(a) || util.isNullOrUndefined(b))
-    return false;
-  // an identical 'prototype' property.
-  if (a.prototype !== b.prototype) return false;
-  //~~~I've managed to break Object.keys through screwy arguments passing.
-  //   Converting to array solves the problem.
-  if (util.isArguments(a)) {
-    if (!util.isArguments(b)) {
-      return false;
-    }
-    a = pSlice.call(a);
-    b = pSlice.call(b);
-    return _deepEqual(a, b);
-  }
-  try{
-    var ka = Object.keys(a),
-      kb = Object.keys(b),
-      key, i;
-  } catch (e) {//happens when one is a string literal and the other isn't
-    return false;
-  }
-  // having the same number of owned properties (keys incorporates
-  // hasOwnProperty)
-  if (ka.length != kb.length)
-    return false;
-  //the same set of keys (although not necessarily the same order),
-  ka.sort();
-  kb.sort();
-  //~~~cheap key test
-  for (i = ka.length - 1; i >= 0; i--) {
-    if (ka[i] != kb[i])
-      return false;
-  }
-  //equivalent values for every corresponding key, and
-  //~~~possibly expensive deep test
-  for (i = ka.length - 1; i >= 0; i--) {
-    key = ka[i];
-    if (!_deepEqual(a[key], b[key])) return false;
-  }
-  return true;
-}
-
-},{"./util":17}],5:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-var util = require('../util')
-  , assert = require('assert')
-  , AssertionError = assert.AssertionError;
-
-module.exports = function(should) {
-  var i = should.format;
-
-  /**
-   * Expose assert to should
-   *
-   * This allows you to do things like below
-   * without require()ing the assert module.
-   *
-   *    should.equal(foo.bar, undefined);
-   *
-   */
-  util.merge(should, assert);
-
-  /**
-   * Assert _obj_ exists, with optional message.
-   *
-   * @param {*} obj
-   * @param {String} [msg]
-   * @api public
-   */
-  should.exist = should.exists = function(obj, msg) {
-    if(null == obj) {
-      throw new AssertionError({
-        message: msg || ('expected ' + i(obj) + ' to exist'), stackStartFunction: should.exist
-      });
-    }
-  };
-
-  /**
-   * Asserts _obj_ does not exist, with optional message.
-   *
-   * @param {*} obj
-   * @param {String} [msg]
-   * @api public
-   */
-
-  should.not = {};
-  should.not.exist = should.not.exists = function(obj, msg) {
-    if(null != obj) {
-      throw new AssertionError({
-        message: msg || ('expected ' + i(obj) + ' to not exist'), stackStartFunction: should.not.exist
-      });
-    }
-  };
-};
-},{"../util":17,"assert":19}],6:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-module.exports = function(should, Assertion) {
-  Assertion.add('true', function() {
-    this.is.exactly(true);
-  }, true);
-
-  Assertion.alias('true', 'True');
-
-  Assertion.add('false', function() {
-    this.is.exactly(false);
-  }, true);
-
-  Assertion.alias('false', 'False');
-
-  Assertion.add('ok', function() {
-    this.params = { operator: 'to be truthy' };
-
-    this.assert(this.obj);
-  }, true);
-};
-},{}],7:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-module.exports = function(should, Assertion) {
-
-  function addLink(name) {
-    Object.defineProperty(Assertion.prototype, name, {
-      get: function() {
-        return this;
-      },
-      enumerable: true
-    });
-  }
-
-  ['an', 'of', 'a', 'and', 'be', 'have', 'with', 'is', 'which', 'the'].forEach(addLink);
-};
-},{}],8:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-var util = require('../util'),
-  eql = require('../eql');
-
-module.exports = function(should, Assertion) {
-  var i = should.format;
-
-  Assertion.add('containEql', function(other) {
-    this.params = { operator: 'to contain ' + i(other) };
-    var obj = this.obj;
-    if(util.isArray(obj)) {
-      this.assert(obj.some(function(item) {
-        return eql(item, other);
-      }));
-    } else if(util.isString(obj)) {
-      // expect obj to be string
-      this.assert(obj.indexOf(String(other)) >= 0);
-    } else if(util.isObject(obj)) {
-      // object contains object case
-      util.forOwn(other, function(value, key) {
-        obj.should.have.property(key, value);
-      });
-    } else {
-      //other uncovered cases
-      this.assert(false);
-    }
-  });
-
-  Assertion.add('containDeepOrdered', function(other) {
-    this.params = { operator: 'to contain ' + i(other) };
-
-    var obj = this.obj;
-    if(util.isArray(obj)) {
-      if(util.isArray(other)) {
-        var otherIdx = 0;
-        obj.forEach(function(item) {
-          try {
-            should(item).not.be.Null.and.containDeep(other[otherIdx]);
-            otherIdx++;
-          } catch(e) {
-            if(e instanceof should.AssertionError) {
-              return;
+                this.stack = out;
             }
-            throw e;
-          }
-        }, this);
+        }
+    };
 
-        this.assert(otherIdx == other.length);
-        //search array contain other as sub sequence
-      } else {
-        this.assert(false);
-      }
-    } else if(util.isString(obj)) {// expect other to be string
-      this.assert(obj.indexOf(String(other)) >= 0);
-    } else if(util.isObject(obj)) {// object contains object case
-      if(util.isObject(other)) {
-        util.forOwn(other, function(value, key) {
-          should(obj[key]).not.be.Null.and.containDeep(value);
-        });
-      } else {//one of the properties contain value
-        this.assert(false);
-      }
-    } else {
-      this.eql(other);
+
+    var indent = '    ';
+    function prependIndent(line) {
+        return indent + line;
     }
-  });
 
-  Assertion.add('containDeep', function(other) {
-    this.params = { operator: 'to contain ' + i(other) };
+    function indentLines(text) {
+        return text.split('\n').map(prependIndent).join('\n');
+    }
 
-    var obj = this.obj;
-    if(util.isArray(obj)) {
-      if(util.isArray(other)) {
-        var usedKeys = {};
-        other.forEach(function(otherItem) {
-          this.assert(obj.some(function(item, index) {
-            if(index in usedKeys) return false;
+
+// assert.AssertionError instanceof Error
+    AssertionError.prototype = Object.create(Error.prototype, {
+        name: {
+            value: 'AssertionError'
+        },
+
+        generateMessage: {
+            value: function() {
+                if(!this.operator && this.previous) {
+                    return this.previous.message;
+                }
+                var actual = format(this.actual);
+                var expected = 'expected' in this ? ' ' + format(this.expected) : '';
+                var details = 'details' in this && this.details ? ' (' + this.details + ')' : '';
+
+                var previous = this.previous ? '\n' + indentLines(this.previous.message) : '';
+
+                return 'expected ' + actual + (this.negate ? ' not ' : ' ') + this.operator + expected + details + previous;
+            }
+        }
+    });
+
+    module.exports = AssertionError;
+},{"./util":17,"should-format":19}],3:[function(require,module,exports){
+    var AssertionError = require('./assertion-error');
+    var util = require('./util');
+    var format = require('should-format');
+
+    /**
+     * should Assertion
+     * @param {*} obj Given object for assertion
+     * @constructor
+     * @memberOf should
+     * @static
+     */
+    function Assertion(obj) {
+        this.obj = obj;
+
+        this.anyOne = false;
+        this.negate = false;
+
+        this.params = {actual: obj};
+    }
+
+    /**
+     * Way to extend Assertion function. It uses some logic
+     * to define only positive assertions and itself rule with negative assertion.
+     *
+     * All actions happen in subcontext and this method take care about negation.
+     * Potentially we can add some more modifiers that does not depends from state of assertion.
+     * @memberOf Assertion
+     * @category assertion
+     * @static
+     * @param {String} name Name of assertion. It will be used for defining method or getter on Assertion.prototype
+     * @param {Function} func Function that will be called on executing assertion
+     * @param {Boolean} [isGetter] If this assertion is getter. By default it is false.
+     * @example
+     *
+     * Assertion.add('asset', function() {
+ *      this.params = { operator: 'to be asset' };
+ *
+ *      this.obj.should.have.property('id').which.is.a.Number;
+ *      this.obj.should.have.property('path');
+ * });
+     */
+    Assertion.add = function(name, func, isGetter) {
+        var prop = {enumerable: true, configurable: true};
+
+        isGetter = !!isGetter;
+
+        prop[isGetter ? 'get' : 'value'] = function() {
+            var context = new Assertion(this.obj, this, name);
+            context.anyOne = this.anyOne;
 
             try {
-              should(item).not.be.Null.and.containDeep(otherItem);
-              usedKeys[index] = true;
-              return true;
+                func.apply(context, arguments);
             } catch(e) {
-              if(e instanceof should.AssertionError) {
-                return false;
-              }
-              throw e;
-            }
-          }));
-        }, this);
+                //check for fail
+                if(e instanceof AssertionError) {
+                    //negative fail
+                    if(this.negate) {
+                        this.obj = context.obj;
+                        this.negate = false;
+                        return this.proxied();
+                    }
 
-      } else {
-        this.assert(false);
-      }
-    } else if(util.isString(obj)) {// expect other to be string
-      this.assert(obj.indexOf(String(other)) >= 0);
-    } else if(util.isObject(obj)) {// object contains object case
-      if(util.isObject(other)) {
-        util.forOwn(other, function(value, key) {
-          should(obj[key]).not.be.Null.and.containDeep(value);
+                    //console.log('catch', name, context.params.operator, e.operator);
+                    //console.log(name, e.actual, context.obj, context.params.actual, this.params.actual);
+                    /*if(e.operator !== context.params.operator) {// it means assertion happen because own context
+                     if(!('obj' in context.params)) {
+                     if(!('actual' in context.params)) {
+                     context.params.actual = context.obj;
+                     }
+                     }
+                     util.merge(e, context.params);
+                     //e.operato
+                     //e.operator = context.params.operator;
+                     }*/
+                    if(context != e.assertion) {
+                        context.params.previous = e;
+                    }
+
+                    //positive fail
+                    context.negate = false;
+                    context.fail();
+                }
+                // throw if it is another exception
+                throw e;
+            }
+
+            //negative pass
+            if(this.negate) {
+                context.negate = true;//because .fail will set negate
+                context.params.details = "false negative fail";
+                context.fail();
+            }
+
+            //positive pass
+            if(!this.params.operator) this.params = context.params;//shortcut
+            this.obj = context.obj;
+            this.negate = false;
+            return this.proxied();
+        };
+
+        Object.defineProperty(Assertion.prototype, name, prop);
+    };
+
+    Assertion.addChain = function(name, onCall) {
+        onCall = onCall || function() {
+        };
+        Object.defineProperty(Assertion.prototype, name, {
+            get: function() {
+                onCall();
+                return this.proxied();
+            },
+            enumerable: true
         });
-      } else {//one of the properties contain value
-        this.assert(false);
-      }
-    } else {
-      this.eql(other);
-    }
-  });
-
-};
-
-},{"../eql":4,"../util":17}],9:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-var eql = require('../eql');
-var strictEql = require('should-equal');
-var warn = require('../warn');
-
-module.exports = function(should, Assertion) {
-  Assertion.add('eql', function(val, description) {
-    this.params = { operator: 'to equal', expected: val, showDiff: true, message: description };
-
-    var nonStrictResult = eql(val, this.obj);
-
-    warn.nonStrictEql(should.warn && nonStrictResult !== strictEql(val, this.obj));
-
-    this.assert(nonStrictResult);
-  });
-
-  Assertion.add('equal', function(val, description) {
-    this.params = { operator: 'to be', expected: val, showDiff: true, message: description };
-
-    this.assert(val === this.obj);
-  });
-
-  /*
-  Assertion.add('strictEql', function(val, description) {
-    this.params = { operator: 'to equal', expected: val, showDiff: true, message: description };
-
-    this.assert(strictEql(val, this.obj));
-  });
-  */
-
-  Assertion.alias('equal', 'exactly');
-};
-},{"../eql":4,"../warn":18,"should-equal":23}],10:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-var util = require('../util');
-
-module.exports = function(should, Assertion) {
-  var i = should.format;
-
-  Assertion.add('throw', function(message, properties) {
-    var fn = this.obj
-      , err = {}
-      , errorInfo = ''
-      , thrown = false;
-
-    var errorMatched = true;
-
-    try {
-      fn();
-    } catch(e) {
-      thrown = true;
-      err = e;
-    }
-
-    if(thrown) {
-      if(message) {
-        if('string' == typeof message) {
-          errorMatched = message == err.message;
-        } else if(message instanceof RegExp) {
-          errorMatched = message.test(err.message);
-        } else if('function' == typeof message) {
-          errorMatched = err instanceof message;
-        } else if(util.isObject(message)) {
-          try {
-            err.should.match(message);
-          } catch(e) {
-            if(e instanceof should.AssertionError) {
-              errorInfo = ": " + e.message;
-              errorMatched = false;
-            } else {
-              throw e;
-            }
-          }
-        }
-
-        if(!errorMatched) {
-          if('string' == typeof message || message instanceof RegExp) {
-            errorInfo = " with a message matching " + i(message) + ", but got '" + err.message + "'";
-          } else if('function' == typeof message) {
-            errorInfo = " of type " + util.functionName(message) + ", but got " + util.functionName(err.constructor);
-          }
-        } else if('function' == typeof message && properties) {
-          try {
-            err.should.match(properties);
-          } catch(e) {
-            if(e instanceof should.AssertionError) {
-              errorInfo = ": " + e.message;
-              errorMatched = false;
-            } else {
-              throw e;
-            }
-          }
-        }
-      } else {
-        errorInfo = " (got " + i(err) + ")";
-      }
-    }
-
-    this.params = { operator: 'to throw exception' + errorInfo };
-
-    this.assert(thrown);
-    this.assert(errorMatched);
-  });
-
-  Assertion.alias('throw', 'throwError');
-};
-},{"../util":17}],11:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-var util = require('../util'),
-  eql = require('../eql');
-
-module.exports = function(should, Assertion) {
-  var i = should.format;
-
-  Assertion.add('match', function(other, description) {
-    this.params = {operator: 'to match ' + i(other), message: description};
-
-    if(!eql(this.obj, other)) {
-      if(util.isRegExp(other)) { // something - regex
-
-        if(util.isString(this.obj)) {
-
-          this.assert(other.exec(this.obj));
-        } else if(util.isArray(this.obj)) {
-
-          this.obj.forEach(function(item) {
-            this.assert(other.exec(item));// should we try to convert to String and exec?
-          }, this);
-        } else if(util.isObject(this.obj)) {
-
-          var notMatchedProps = [], matchedProps = [];
-          util.forOwn(this.obj, function(value, name) {
-            if(other.exec(value)) matchedProps.push(util.formatProp(name));
-            else notMatchedProps.push(util.formatProp(name) + ' (' + i(value) + ')');
-          }, this);
-
-          if(notMatchedProps.length)
-            this.params.operator += '\n    not matched properties: ' + notMatchedProps.join(', ');
-          if(matchedProps.length)
-            this.params.operator += '\n    matched properties: ' + matchedProps.join(', ');
-
-          this.assert(notMatchedProps.length == 0);
-        } // should we try to convert to String and exec?
-      } else if(util.isFunction(other)) {
-        var res;
-
-        res = other(this.obj);
-
-        if(res instanceof Assertion) {
-          this.params.operator += '\n    ' + res.getMessage();
-        }
-
-        //if we throw exception ok - it is used .should inside
-        if(util.isBoolean(res)) {
-          this.assert(res); // if it is just boolean function assert on it
-        }
-      } else if(util.isObject(other)) { // try to match properties (for Object and Array)
-        notMatchedProps = [];
-        matchedProps = [];
-
-        util.forOwn(other, function(value, key) {
-          try {
-            should(this.obj[key]).match(value);
-            matchedProps.push(util.formatProp(key));
-          } catch(e) {
-            if(e instanceof should.AssertionError) {
-              notMatchedProps.push(util.formatProp(key) + ' (' + i(this.obj[key]) + ')');
-            } else {
-              throw e;
-            }
-          }
-        }, this);
-
-        if(notMatchedProps.length)
-          this.params.operator += '\n    not matched properties: ' + notMatchedProps.join(', ');
-        if(matchedProps.length)
-          this.params.operator += '\n    matched properties: ' + matchedProps.join(', ');
-
-        this.assert(notMatchedProps.length == 0);
-      } else {
-        this.assert(false);
-      }
-    }
-  });
-
-  Assertion.add('matchEach', function(other, description) {
-    this.params = {operator: 'to match each ' + i(other), message: description};
-
-    var f = other;
-
-    if(util.isRegExp(other))
-      f = function(it) {
-        return !!other.exec(it);
-      };
-    else if(!util.isFunction(other))
-      f = function(it) {
-        return eql(it, other);
-      };
-
-    util.forOwn(this.obj, function(value, key) {
-      var res = f(value, key);
-
-      //if we throw exception ok - it is used .should inside
-      if(util.isBoolean(res)) {
-        this.assert(res); // if it is just boolean function assert on it
-      }
-    }, this);
-  });
-};
-},{"../eql":4,"../util":17}],12:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-module.exports = function(should, Assertion) {
-  Assertion.add('NaN', function() {
-    this.params = { operator: 'to be NaN' };
-
-    this.assert(this.obj !== this.obj);
-  }, true);
-
-  Assertion.add('Infinity', function() {
-    this.params = { operator: 'to be Infinity' };
-
-    this.obj.should.be.a.Number
-      .and.not.a.NaN
-      .and.assert(!isFinite(this.obj));
-  }, true);
-
-  Assertion.add('within', function(start, finish, description) {
-    this.params = { operator: 'to be within ' + start + '..' + finish, message: description };
-
-    this.assert(this.obj >= start && this.obj <= finish);
-  });
-
-  Assertion.add('approximately', function(value, delta, description) {
-    this.params = { operator: 'to be approximately ' + value + " ±" + delta, message: description };
-
-    this.assert(Math.abs(this.obj - value) <= delta);
-  });
-
-  Assertion.add('above', function(n, description) {
-    this.params = { operator: 'to be above ' + n, message: description };
-
-    this.assert(this.obj > n);
-  });
-
-  Assertion.add('below', function(n, description) {
-    this.params = { operator: 'to be below ' + n, message: description };
-
-    this.assert(this.obj < n);
-  });
-
-  Assertion.alias('above', 'greaterThan');
-  Assertion.alias('below', 'lessThan');
-
-};
-
-},{}],13:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-var util = require('../util'),
-  eql = require('../eql');
-
-var aSlice = Array.prototype.slice;
-
-module.exports = function(should, Assertion) {
-  var i = should.format;
-
-  Assertion.add('enumerable', function(name, val) {
-    name = String(name);
-
-    this.params = {
-      operator: "to have enumerable property " + util.formatProp(name)
     };
 
-    this.assert(this.obj.propertyIsEnumerable(name));
-
-    if(arguments.length > 1) {
-      this.params.operator += " equal to " + i(val);
-      this.assert(eql(val, this.obj[name]));
-    }
-  });
-
-  Assertion.add('property', function(name, val) {
-    name = String(name);
-    if(arguments.length > 1) {
-      var p = {};
-      p[name] = val;
-      this.have.properties(p);
-    } else {
-      this.have.properties(name);
-    }
-    this.obj = this.obj[name];
-  });
-
-  Assertion.add('properties', function(names) {
-    var values = {};
-    if(arguments.length > 1) {
-      names = aSlice.call(arguments);
-    } else if(!util.isArray(names)) {
-      if(util.isString(names)) {
-        names = [names];
-      } else {
-        values = names;
-        names = Object.keys(names);
-      }
-    }
-
-    var obj = Object(this.obj), missingProperties = [];
-
-    //just enumerate properties and check if they all present
-    names.forEach(function(name) {
-      if(!(name in obj)) missingProperties.push(util.formatProp(name));
-    });
-
-    var props = missingProperties;
-    if(props.length === 0) {
-      props = names.map(util.formatProp);
-    } else if(this.anyOne) {
-      props = names.filter(function(name) {
-        return missingProperties.indexOf(util.formatProp(name)) < 0;
-      }).map(util.formatProp);
-    }
-
-    var operator = (props.length === 1 ?
-        'to have property ' : 'to have ' + (this.anyOne ? 'any of ' : '') + 'properties ') + props.join(', ');
-
-    this.params = {obj: this.formattedObj(), operator: operator};
-
-    //check that all properties presented
-    //or if we request one of them that at least one them presented
-    this.assert(missingProperties.length === 0 || (this.anyOne && missingProperties.length != names.length));
-
-    // check if values in object matched expected
-    var valueCheckNames = Object.keys(values);
-    if(valueCheckNames.length) {
-      var wrongValues = [];
-      props = [];
-
-      // now check values, as there we have all properties
-      valueCheckNames.forEach(function(name) {
-        var value = values[name];
-        if(!eql(obj[name], value)) {
-          wrongValues.push(util.formatProp(name) + ' of ' + i(value) + ' (got ' + i(obj[name]) + ')');
-        } else {
-          props.push(util.formatProp(name) + ' of ' + i(value));
-        }
-      });
-
-      if((wrongValues.length !== 0 && !this.anyOne) || (this.anyOne && props.length === 0)) {
-        props = wrongValues;
-      }
-
-      operator = (props.length === 1 ?
-        'to have property ' : 'to have ' + (this.anyOne ? 'any of ' : '') + 'properties ') + props.join(', ');
-
-      this.params = {obj: this.formattedObj(), operator: operator};
-
-      //if there is no not matched values
-      //or there is at least one matched
-      this.assert(wrongValues.length === 0 || (this.anyOne && wrongValues.length != valueCheckNames.length));
-    }
-  });
-
-  Assertion.add('length', function(n, description) {
-    this.have.property('length', n, description);
-  });
-
-  Assertion.alias('length', 'lengthOf');
-
-  var hasOwnProperty = Object.prototype.hasOwnProperty;
-
-  Assertion.add('ownProperty', function(name, description) {
-    name = String(name);
-    this.params = {
-      obj: this.formattedObj(),
-      operator: 'to have own property ' + util.formatProp(name),
-      message: description
+    /**
+     * Create alias for some `Assertion` property
+     *
+     * @memberOf Assertion
+     * @category assertion
+     * @static
+     * @param {String} from Name of to map
+     * @param {String} to Name of alias
+     * @example
+     *
+     * Assertion.alias('true', 'True');
+     */
+    Assertion.alias = function(from, to) {
+        var desc = Object.getOwnPropertyDescriptor(Assertion.prototype, from);
+        if(!desc) throw new Error('Alias ' + from + ' -> ' + to + ' could not be created as ' + from + ' not defined');
+        Object.defineProperty(Assertion.prototype, to, desc);
     };
 
-    this.assert(hasOwnProperty.call(this.obj, name));
-
-    this.obj = this.obj[name];
-  });
-
-  Assertion.alias('ownProperty', 'hasOwnProperty');
-
-  Assertion.add('empty', function() {
-    this.params = {operator: 'to be empty'};
-
-    if(util.isString(this.obj) || util.isArray(this.obj) || util.isArguments(this.obj)) {
-      this.obj.should.have.property('length', 0);
-    } else {
-      var obj = Object(this.obj); // wrap to reference for booleans and numbers
-      for(var prop in obj) {
-        this.obj.should.not.ownProperty(prop);
-      }
-    }
-  }, true);
-
-  Assertion.add('keys', function(keys) {
-    if(arguments.length > 1) keys = aSlice.call(arguments);
-    else if(arguments.length === 1 && util.isString(keys)) keys = [keys];
-    else if(arguments.length === 0) keys = [];
-
-    keys = keys.map(String);
-
-    var obj = Object(this.obj);
-
-    // first check if some keys are missing
-    var missingKeys = [];
-    keys.forEach(function(key) {
-      if(!hasOwnProperty.call(this.obj, key))
-        missingKeys.push(util.formatProp(key));
-    }, this);
-
-    // second check for extra keys
-    var extraKeys = [];
-    Object.keys(obj).forEach(function(key) {
-      if(keys.indexOf(key) < 0) {
-        extraKeys.push(util.formatProp(key));
-      }
-    });
-
-    var verb = keys.length === 0 ? 'to be empty' :
-    'to have ' + (keys.length === 1 ? 'key ' : 'keys ');
-
-    this.params = {operator: verb + keys.map(util.formatProp).join(', ')};
-
-    if(missingKeys.length > 0)
-      this.params.operator += '\n\tmissing keys: ' + missingKeys.join(', ');
-
-    if(extraKeys.length > 0)
-      this.params.operator += '\n\textra keys: ' + extraKeys.join(', ');
-
-    this.assert(missingKeys.length === 0 && extraKeys.length === 0);
-  });
-
-  Assertion.alias("keys", "key");
-
-  Assertion.add('propertyByPath', function(properties) {
-    if(arguments.length > 1) properties = aSlice.call(arguments);
-    else if(arguments.length === 1 && util.isString(properties)) properties = [properties];
-    else if(arguments.length === 0) properties = [];
-
-    var allProps = properties.map(util.formatProp);
-
-    properties = properties.map(String);
-
-    var obj = should(Object(this.obj));
-
-    var foundProperties = [];
-
-    var currentProperty;
-    while(currentProperty = properties.shift()) {
-      this.params = {operator: 'to have property by path ' + allProps.join(', ') + ' - failed on ' + util.formatProp(currentProperty)};
-      obj = obj.have.property(currentProperty);
-      foundProperties.push(currentProperty);
-    }
-
-    this.params = {obj: this.formattedObj(), operator: 'to have property by path ' + allProps.join(', ')};
-
-    this.obj = obj.obj;
-  });
-};
-
-},{"../eql":4,"../util":17}],14:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-module.exports = function(should, Assertion) {
-  Assertion.add('startWith', function(str, description) {
-    this.params = { operator: 'to start with ' + should.format(str), message: description };
-
-    this.assert(0 === this.obj.indexOf(str));
-  });
-
-  Assertion.add('endWith', function(str, description) {
-    this.params = { operator: 'to end with ' + should.format(str), message: description };
-
-    this.assert(this.obj.indexOf(str, this.obj.length - str.length) >= 0);
-  });
-};
-},{}],15:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-var util = require('../util');
-
-module.exports = function(should, Assertion) {
-  Assertion.add('Number', function() {
-    this.params = { operator: 'to be a number' };
-
-    this.assert(util.isNumber(this.obj));
-  }, true);
-
-  Assertion.add('arguments', function() {
-    this.params = { operator: 'to be arguments' };
-
-    this.assert(util.isArguments(this.obj));
-  }, true);
-
-  Assertion.add('type', function(type, description) {
-    this.params = { operator: 'to have type ' + type, message: description };
-
-    (typeof this.obj).should.be.exactly(type, description);
-  });
-
-  Assertion.add('instanceof', function(constructor, description) {
-    this.params = { operator: 'to be an instance of ' + util.functionName(constructor), message: description };
-
-    this.assert(Object(this.obj) instanceof constructor);
-  });
-
-  Assertion.add('Function', function() {
-    this.params = { operator: 'to be a function' };
-
-    this.assert(util.isFunction(this.obj));
-  }, true);
-
-  Assertion.add('Object', function() {
-    this.params = { operator: 'to be an object' };
-
-    this.assert(util.isObject(this.obj));
-  }, true);
-
-  Assertion.add('String', function() {
-    this.params = { operator: 'to be a string' };
-
-    this.assert(util.isString(this.obj));
-  }, true);
-
-  Assertion.add('Array', function() {
-    this.params = { operator: 'to be an array' };
-
-    this.assert(util.isArray(this.obj));
-  }, true);
-
-  Assertion.add('Boolean', function() {
-    this.params = { operator: 'to be a boolean' };
-
-    this.assert(util.isBoolean(this.obj));
-  }, true);
-
-  Assertion.add('Error', function() {
-    this.params = { operator: 'to be an error' };
-
-    this.assert(util.isError(this.obj));
-  }, true);
-
-  Assertion.add('null', function() {
-    this.params = { operator: 'to be null' };
-
-    this.assert(this.obj === null);
-  }, true);
-
-  Assertion.alias('null', 'Null');
-
-  Assertion.alias('instanceof', 'instanceOf');
-};
-
-},{"../util":17}],16:[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-var util = require('./util');
-var isBoolean = util.isBoolean;
-var isObject = util.isObject;
-var isUndefined = util.isUndefined;
-var isFunction = util.isFunction;
-var isString = util.isString;
-var isNumber = util.isNumber;
-var isNull = util.isNull;
-var isRegExp = util.isRegExp;
-var isDate = util.isDate;
-var isError = util.isError;
-var isArray = util.isArray;
-
-/**
- * Echos the value of a value. Trys to print the value out
- * in the best way possible given the different types.
- *
- * @param {Object} obj The object to print out.
- * @param {Object} opts Optional options object that alters the output.
- */
-/* legacy: obj, showHidden, depth, colors*/
-function inspect(obj, opts) {
-  // default options
-  var ctx = {
-    seen: [],
-    stylize: stylizeNoColor
-  };
-  // legacy...
-  if (arguments.length >= 3) ctx.depth = arguments[2];
-  if (arguments.length >= 4) ctx.colors = arguments[3];
-  if (isBoolean(opts)) {
-    // legacy...
-    ctx.showHidden = opts;
-  } else if (opts) {
-    // got an "options" object
-    exports._extend(ctx, opts);
-  }
-  // set default options
-  if (isUndefined(ctx.showHidden)) ctx.showHidden = false;
-  if (isUndefined(ctx.depth)) ctx.depth = 2;
-  if (isUndefined(ctx.colors)) ctx.colors = false;
-  if (isUndefined(ctx.customInspect)) ctx.customInspect = true;
-  if (ctx.colors) ctx.stylize = stylizeWithColor;
-  return formatValue(ctx, obj, ctx.depth);
-}
-exports.inspect = inspect;
-
-
-// http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
-inspect.colors = {
-  'bold' : [1, 22],
-  'italic' : [3, 23],
-  'underline' : [4, 24],
-  'inverse' : [7, 27],
-  'white' : [37, 39],
-  'grey' : [90, 39],
-  'black' : [30, 39],
-  'blue' : [34, 39],
-  'cyan' : [36, 39],
-  'green' : [32, 39],
-  'magenta' : [35, 39],
-  'red' : [31, 39],
-  'yellow' : [33, 39]
-};
-
-// Don't use 'blue' not visible on cmd.exe
-inspect.styles = {
-  'special': 'cyan',
-  'number': 'yellow',
-  'boolean': 'yellow',
-  'undefined': 'grey',
-  'null': 'bold',
-  'string': 'green',
-  'date': 'magenta',
-  // "name": intentionally not styling
-  'regexp': 'red'
-};
-
-
-function stylizeWithColor(str, styleType) {
-  var style = inspect.styles[styleType];
-
-  if (style) {
-    return '\u001b[' + inspect.colors[style][0] + 'm' + str +
-      '\u001b[' + inspect.colors[style][1] + 'm';
-  } else {
-    return str;
-  }
-}
-
-
-function stylizeNoColor(str, styleType) {
-  return str;
-}
-
-
-function arrayToHash(array) {
-  var hash = {};
-
-  array.forEach(function(val, idx) {
-    hash[val] = true;
-  });
-
-  return hash;
-}
-
-
-function formatValue(ctx, value, recurseTimes) {
-  // Provide a hook for user-specified inspect functions.
-  // Check that value is an object with an inspect function on it
-  if (ctx.customInspect &&
-    value &&
-    isFunction(value.inspect) &&
-    // Filter out the util module, it's inspect function is special
-    value.inspect !== exports.inspect &&
-    // Also filter out any prototype objects using the circular check.
-    !(value.constructor && value.constructor.prototype === value)) {
-    var ret = value.inspect(recurseTimes, ctx);
-    if (!isString(ret)) {
-      ret = formatValue(ctx, ret, recurseTimes);
-    }
-    return ret;
-  }
-
-  // Primitive types cannot have properties
-  var primitive = formatPrimitive(ctx, value);
-  if (primitive) {
-    return primitive;
-  }
-
-  // Look up the keys of the object.
-  var keys = Object.keys(value);
-  var visibleKeys = arrayToHash(keys);
-
-  if (ctx.showHidden) {
-    keys = Object.getOwnPropertyNames(value);
-  }
-
-  // This could be a boxed primitive (new String(), etc.), check valueOf()
-  // NOTE: Avoid calling `valueOf` on `Date` instance because it will return
-  // a number which, when object has some additional user-stored `keys`,
-  // will be printed out.
-  var formatted;
-  var raw = value;
-  try {
-    // the .valueOf() call can fail for a multitude of reasons
-    if (!isDate(value))
-      raw = value.valueOf();
-  } catch (e) {
-    // ignore...
-  }
-
-  if (isString(raw)) {
-    // for boxed Strings, we have to remove the 0-n indexed entries,
-    // since they just noisey up the output and are redundant
-    keys = keys.filter(function(key) {
-      return !(key >= 0 && key < raw.length);
-    });
-  }
-
-  if (isError(value)) {
-    return formatError(value);
-  }
-
-  // Some type of object without properties can be shortcutted.
-  if (keys.length === 0) {
-    if (isFunction(value)) {
-      var name = value.name ? ': ' + value.name : '';
-      return ctx.stylize('[Function' + name + ']', 'special');
-    }
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    }
-    if (isDate(value)) {
-      return ctx.stylize(formatDate(value), 'date');
-    }
-    // now check the `raw` value to handle boxed primitives
-    if (isString(raw)) {
-      formatted = formatPrimitiveNoColor(ctx, raw);
-      return ctx.stylize('[String: ' + formatted + ']', 'string');
-    }
-    if (isNumber(raw)) {
-      formatted = formatPrimitiveNoColor(ctx, raw);
-      return ctx.stylize('[Number: ' + formatted + ']', 'number');
-    }
-    if (isBoolean(raw)) {
-      formatted = formatPrimitiveNoColor(ctx, raw);
-      return ctx.stylize('[Boolean: ' + formatted + ']', 'boolean');
-    }
-  }
-
-  var base = '', array = false, braces = ['{', '}'];
-
-  // Make Array say that they are Array
-  if (isArray(value)) {
-    array = true;
-    braces = ['[', ']'];
-  }
-
-  // Make functions say that they are functions
-  if (isFunction(value)) {
-    var n = value.name ? ': ' + value.name : '';
-    base = ' [Function' + n + ']';
-  }
-
-  // Make RegExps say that they are RegExps
-  if (isRegExp(value)) {
-    base = ' ' + RegExp.prototype.toString.call(value);
-  }
-
-  // Make dates with properties first say the date
-  if (isDate(value)) {
-    base = ' ' + formatDate(value);
-  }
-
-  // Make error with message first say the error
-  if (isError(value)) {
-    base = ' ' + formatError(value);
-  }
-
-  // Make boxed primitive Strings look like such
-  if (isString(raw)) {
-    formatted = formatPrimitiveNoColor(ctx, raw);
-    base = ' ' + '[String: ' + formatted + ']';
-  }
-
-  // Make boxed primitive Numbers look like such
-  if (isNumber(raw)) {
-    formatted = formatPrimitiveNoColor(ctx, raw);
-    base = ' ' + '[Number: ' + formatted + ']';
-  }
-
-  // Make boxed primitive Booleans look like such
-  if (isBoolean(raw)) {
-    formatted = formatPrimitiveNoColor(ctx, raw);
-    base = ' ' + '[Boolean: ' + formatted + ']';
-  }
-
-  if (keys.length === 0 && (!array || value.length === 0)) {
-    return braces[0] + base + braces[1];
-  }
-
-  if (recurseTimes < 0) {
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    } else {
-      return ctx.stylize('[Object]', 'special');
-    }
-  }
-
-  ctx.seen.push(value);
-
-  var output;
-  if (array) {
-    output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
-  } else {
-    output = keys.map(function(key) {
-      return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
-    });
-  }
-
-  ctx.seen.pop();
-
-  return reduceToSingleString(output, base, braces);
-}
-
-
-function formatPrimitive(ctx, value) {
-  if (isUndefined(value))
-    return ctx.stylize('undefined', 'undefined');
-  if (isString(value)) {
-    var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
-      .replace(/'/g, "\\'")
-      .replace(/\\"/g, '"') + '\'';
-    return ctx.stylize(simple, 'string');
-  }
-  if (isNumber(value)) {
-    // Format -0 as '-0'. Strict equality won't distinguish 0 from -0,
-    // so instead we use the fact that 1 / -0 < 0 whereas 1 / 0 > 0 .
-    if (value === 0 && 1 / value < 0)
-      return ctx.stylize('-0', 'number');
-    return ctx.stylize('' + value, 'number');
-  }
-  if (isBoolean(value))
-    return ctx.stylize('' + value, 'boolean');
-  // For some reason typeof null is "object", so special case here.
-  if (isNull(value))
-    return ctx.stylize('null', 'null');
-}
-
-
-function formatPrimitiveNoColor(ctx, value) {
-  var stylize = ctx.stylize;
-  ctx.stylize = stylizeNoColor;
-  var str = formatPrimitive(ctx, value);
-  ctx.stylize = stylize;
-  return str;
-}
-
-
-function formatError(value) {
-  return '[' + Error.prototype.toString.call(value) + ']';
-}
-
-
-function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
-  var output = [];
-  for (var i = 0, l = value.length; i < l; ++i) {
-    if (hasOwnProperty(value, String(i))) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-        String(i), true));
-    } else {
-      output.push('');
-    }
-  }
-  keys.forEach(function(key) {
-    if (!key.match(/^\d+$/)) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-        key, true));
-    }
-  });
-  return output;
-}
-
-function pad2Zero(n) {
-  return n < 10 ? '0'+n: ''+n;
-}
-
-function pad3Zero(n) {
-  return n < 100 ? '0' + pad2Zero(n): '' + n;
-}
-
-function formatDate( value) {
-  var to = value.getTimezoneOffset();
-  var absTo = Math.abs(to);
-  var hours = Math.floor(absTo / 60);
-  var minutes = absTo - hours * 60;
-  var tzFormat = 'GMT' + (to < 0 ? '+': '-') + pad2Zero(hours) + pad2Zero(minutes);
-  return value.toLocaleDateString() + ' ' + value.toLocaleTimeString() + '.' + pad3Zero(value.getMilliseconds()) + ' ' + tzFormat;
-}
-
-
-function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
-  var name, str, desc;
-  desc = Object.getOwnPropertyDescriptor(value, key) || { value: value[key] };
-  if (desc.get) {
-    if (desc.set) {
-      str = ctx.stylize('[Getter/Setter]', 'special');
-    } else {
-      str = ctx.stylize('[Getter]', 'special');
-    }
-  } else {
-    if (desc.set) {
-      str = ctx.stylize('[Setter]', 'special');
-    }
-  }
-  if (!hasOwnProperty(visibleKeys, key)) {
-    name = '[' + key + ']';
-  }
-  if (!str) {
-    if (ctx.seen.indexOf(desc.value) < 0) {
-      if (isNull(recurseTimes)) {
-        str = formatValue(ctx, desc.value, null);
-      } else {
-        str = formatValue(ctx, desc.value, recurseTimes - 1);
-      }
-      if (str.indexOf('\n') > -1) {
-        if (array) {
-          str = str.split('\n').map(function(line) {
-            return ' ' + line;
-          }).join('\n').substr(2);
-        } else {
-          str = '\n' + str.split('\n').map(function(line) {
-            return ' ' + line;
-          }).join('\n');
+    Assertion.prototype = {
+        constructor: Assertion,
+
+        /**
+         * Base method for assertions. Before calling this method need to fill Assertion#params object. This method usually called from other assertion methods.
+         * `Assertion#params` can contain such properties:
+         * * `operator` - required string containing description of this assertion
+         * * `obj` - optional replacement for this.obj, it usefull if you prepare more clear object then given
+         * * `message` - if this property filled with string any others will be ignored and this one used as assertion message
+         * * `expected` - any object used when you need to assert relation between given object and expected. Like given == expected (== is a relation)
+         * * `details` - additional string with details to generated message
+         *
+         * @memberOf Assertion
+         * @category assertion
+         * @param {*} expr Any expression that will be used as a condition for asserting.
+         * @example
+         *
+         * var a = new should.Assertion(42);
+         *
+         * a.params = {
+   *  operator: 'to be magic number',
+   * }
+         *
+         * a.assert(false);
+         * //throws AssertionError: expected 42 to be magic number
+         */
+        assert: function(expr) {
+            if(expr) return this.proxied();
+
+            var params = this.params;
+
+            if('obj' in params && !('actual' in params)) {
+                params.actual = params.obj;
+            } else if(!('obj' in params) && !('actual' in params)) {
+                params.actual = this.obj;
+            }
+
+            params.stackStartFunction = params.stackStartFunction || this.assert;
+            params.negate = this.negate;
+
+            params.assertion = this;
+
+            throw new AssertionError(params);
+        },
+
+        /**
+         * Shortcut for `Assertion#assert(false)`.
+         *
+         * @memberOf Assertion
+         * @category assertion
+         * @example
+         *
+         * var a = new should.Assertion(42);
+         *
+         * a.params = {
+   *  operator: 'to be magic number',
+   * }
+         *
+         * a.fail();
+         * //throws AssertionError: expected 42 to be magic number
+         */
+        fail: function() {
+            return this.assert(false);
+        },
+
+        /**
+         * Negation modifier. Current assertion chain become negated. Each call invert negation on current assertion.
+         *
+         * @memberOf Assertion
+         * @category assertion
+         */
+        get not() {
+            this.negate = !this.negate;
+            return this.proxied();
+        },
+
+        /**
+         * Any modifier - it affect on execution of sequenced assertion to do not `check all`, but `check any of`.
+         *
+         * @memberOf Assertion
+         * @category assertion
+         */
+        get any() {
+            this.anyOne = true;
+            return this.proxied();
+        },
+
+        proxied: function() {
+            if(typeof Proxy == 'function') {
+                return new Proxy(this, {
+                    get: function(target, name) {
+                        if(name in target) {
+                            return target[name];
+                        } else {
+                            throw new Error('Assertion has no property ' + util.formatProp(name));
+                        }
+                    }
+                })
+            }
+            return this;
         }
-      }
-    } else {
-      str = ctx.stylize('[Circular]', 'special');
-    }
-  }
-  if (isUndefined(name)) {
-    if (array && key.match(/^\d+$/)) {
-      return str;
-    }
-    name = JSON.stringify('' + key);
-    if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
-      name = name.substr(1, name.length - 2);
-      name = ctx.stylize(name, 'name');
-    } else {
-      name = name.replace(/'/g, "\\'")
-        .replace(/\\"/g, '"')
-        .replace(/(^"|"$)/g, "'")
-        .replace(/\\\\/g, '\\');
-      name = ctx.stylize(name, 'string');
-    }
-  }
+    };
 
-  return name + ': ' + str;
-}
+    module.exports = Assertion;
+},{"./assertion-error":2,"./util":17,"should-format":19}],4:[function(require,module,exports){
+    var config = {
+        checkProtoEql: false
+    };
 
+    module.exports = config;
+},{}],5:[function(require,module,exports){
+// implement assert interface using already written peaces of should.js
 
-function reduceToSingleString(output, base, braces) {
-  var length = output.reduce(function(prev, cur) {
-    return prev + cur.replace(/\u001b\[\d\d?m/g, '').length + 1;
-  }, 0);
-
-  if (length > 60) {
-    return braces[0] +
-      (base === '' ? '' : base + '\n ') +
-      ' ' +
-      output.join(',\n ') +
-      ' ' +
-      braces[1];
-  }
-
-  return braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
-}
-
-exports._extend = function _extend(origin, add) {
-  // Don't do anything if add isn't an object
-  if (!add || !isObject(add)) return origin;
-
-  var keys = Object.keys(add);
-  var i = keys.length;
-  while (i--) {
-    origin[keys[i]] = add[keys[i]];
-  }
-  return origin;
-};
-
-function hasOwnProperty(obj, prop) {
-  return Object.prototype.hasOwnProperty.call(obj, prop);
-}
-
-},{"./util":17}],17:[function(require,module,exports){
-/*!
- * Should
- * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
- * MIT Licensed
- */
-
-/**
- * Check if given obj just a primitive type wrapper
- * @param {Object} obj
- * @returns {boolean}
- * @api private
- */
-exports.isWrapperType = function(obj) {
-    return obj instanceof Number || obj instanceof String || obj instanceof Boolean;
-};
-
-/**
- * Merge object b with object a.
- *
- *     var a = { foo: 'bar' }
- *       , b = { bar: 'baz' };
- *
- *     utils.merge(a, b);
- *     // => { foo: 'bar', bar: 'baz' }
- *
- * @param {Object} a
- * @param {Object} b
- * @return {Object}
- * @api private
- */
-
-exports.merge = function(a, b){
-  if (a && b) {
-    for (var key in b) {
-      a[key] = b[key];
-    }
-  }
-  return a;
-};
-
-function isArray(arr) {
-  return isObject(arr) && (arr.__ArrayLike || Array.isArray(arr));
-}
-
-exports.isArray = isArray;
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-
-exports.isNumber = isNumber;
-
-function isString(arg) {
-  return typeof arg === 'string';
-}
-
-function isBoolean(arg) {
-  return typeof arg === 'boolean';
-}
-exports.isBoolean = isBoolean;
-
-exports.isString = isString;
-
-function isBuffer(arg) {
-  return typeof Buffer !== 'undefined' && arg instanceof Buffer;
-}
-
-exports.isBuffer = isBuffer;
-
-function isDate(d) {
-  return isObject(d) && objectToString(d) === '[object Date]';
-}
-
-exports.isDate = isDate;
-
-function objectToString(o) {
-  return Object.prototype.toString.call(o);
-}
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-
-exports.isObject = isObject;
-
-function isRegExp(re) {
-  return isObject(re) && objectToString(re) === '[object RegExp]';
-}
-
-exports.isRegExp = isRegExp;
-
-function isNullOrUndefined(arg) {
-  return arg == null;
-}
-
-exports.isNullOrUndefined = isNullOrUndefined;
-
-function isNull(arg) {
-  return arg === null;
-}
-exports.isNull = isNull;
-
-function isArguments(object) {
-  return objectToString(object) === '[object Arguments]';
-}
-
-exports.isArguments = isArguments;
-
-exports.isFunction = function(arg) {
-  return typeof arg === 'function' || arg instanceof Function;
-};
-
-function isError(e) {
-  return (isObject(e) && objectToString(e) === '[object Error]') || (e instanceof Error);
-}
-exports.isError = isError;
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-
-exports.isUndefined = isUndefined;
-
-exports.AssertionError = require('assert').AssertionError;
-
-var hasOwnProperty = Object.prototype.hasOwnProperty;
-
-exports.forOwn = function(obj, f, context) {
-  for(var prop in obj) {
-    if(hasOwnProperty.call(obj, prop)) {
-      f.call(context, obj[prop], prop);
-    }
-  }
-};
-
-var functionNameRE = /^\s*function\s*(\S*)\s*\(/;
-
-exports.functionName = function(f) {
-  if(f.name) {
-    return f.name;
-  }
-  var name = f.toString().match(functionNameRE)[1];
-  return name;
-};
-
-exports.formatProp = function(name) {
-  name = JSON.stringify('' + name);
-  if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
-    name = name.substr(1, name.length - 2);
-  } else {
-    name = name.replace(/'/g, "\\'")
-      .replace(/\\"/g, '"')
-      .replace(/(^"|"$)/g, "'")
-      .replace(/\\\\/g, '\\');
-  }
-  return name;
-}
-},{"assert":19}],18:[function(require,module,exports){
-var WARN = '\u001b[33mWARN\u001b[39m';
-
-function generateDeprecated(lines) {
-  return function(show) {
-    if(!show) return;
-
-    lines.concat(sharedPart).forEach(function(line) {
-      console.warn(WARN, line);
-    });
-  }
-}
-
-var sharedPart = [
-  'To disable any warnings add \u001b[33mshould.warn = false\u001b[39m',
-  'If you think that is not right, raise issue on github https://github.com/shouldjs/should.js/issues'
-];
-
-exports.staticShouldUnWrap = generateDeprecated([
-  'Static version of should was called with primitive type wrapper like should(new Number(10))',
-  'current version will unwrap it to assert on primitive value for you',
-  'but that will be changed in future versions, make sure you know what are you doing'
-]);
-
-exports.nonStrictEql = generateDeprecated([
-  'Strict version of eql return different result for this comparison',
-  'it means that e.g { a: 10 } is equal to { a: "10" }, make sure it is expected'
-]);
-},{}],19:[function(require,module,exports){
 // http://wiki.commonjs.org/wiki/Unit_Testing/1.0
 //
 // THIS IS NOT TESTED NOR LIKELY TO WORK OUTSIDE V8!
@@ -1821,113 +534,48 @@ exports.nonStrictEql = generateDeprecated([
 // when used in node, this will actually load the util module we depend on
 // versus loading the builtin util module as happens otherwise
 // this is a bug in node module loading as far as I am concerned
-var util = require('util/');
+    var util = require('./../util');
+    var Assertion = require('./../assertion');
 
-var pSlice = Array.prototype.slice;
-var hasOwn = Object.prototype.hasOwnProperty;
+    var _deepEqual = require('should-equal');
+
+    var pSlice = Array.prototype.slice;
 
 // 1. The assert module provides functions that throw
 // AssertionError's when particular conditions are not met. The
 // assert module must conform to the following interface.
 
-var assert = module.exports = ok;
-
-// 2. The AssertionError is defined in assert.
-// new assert.AssertionError({ message: message,
-//                             actual: actual,
-//                             expected: expected })
-
-assert.AssertionError = function AssertionError(options) {
-  this.name = 'AssertionError';
-  this.actual = options.actual;
-  this.expected = options.expected;
-  this.operator = options.operator;
-  if (options.message) {
-    this.message = options.message;
-    this.generatedMessage = false;
-  } else {
-    this.message = getMessage(this);
-    this.generatedMessage = true;
-  }
-  var stackStartFunction = options.stackStartFunction || fail;
-
-  if (Error.captureStackTrace) {
-    Error.captureStackTrace(this, stackStartFunction);
-  }
-  else {
-    // non v8 browsers so we can have a stacktrace
-    var err = new Error();
-    if (err.stack) {
-      var out = err.stack;
-
-      // try to strip useless frames
-      var fn_name = stackStartFunction.name;
-      var idx = out.indexOf('\n' + fn_name);
-      if (idx >= 0) {
-        // once we have located the function frame
-        // we need to strip out everything before it (and its line)
-        var next_line = out.indexOf('\n', idx + 1);
-        out = out.substring(next_line + 1);
-      }
-
-      this.stack = out;
-    }
-  }
-};
-
-// assert.AssertionError instanceof Error
-util.inherits(assert.AssertionError, Error);
-
-function replacer(key, value) {
-  if (util.isUndefined(value)) {
-    return '' + value;
-  }
-  if (util.isNumber(value) && (isNaN(value) || !isFinite(value))) {
-    return value.toString();
-  }
-  if (util.isFunction(value) || util.isRegExp(value)) {
-    return value.toString();
-  }
-  return value;
-}
-
-function truncate(s, n) {
-  if (util.isString(s)) {
-    return s.length < n ? s : s.slice(0, n);
-  } else {
-    return s;
-  }
-}
-
-function getMessage(self) {
-  return truncate(JSON.stringify(self.actual, replacer), 128) + ' ' +
-         self.operator + ' ' +
-         truncate(JSON.stringify(self.expected, replacer), 128);
-}
-
-// At present only the three keys mentioned above are used and
-// understood by the spec. Implementations or sub modules can pass
-// other keys to the AssertionError's constructor - they will be
-// ignored.
+    var assert = module.exports = ok;
 
 // 3. All of the following functions must throw an AssertionError
 // when a corresponding condition is not met, with a message that
 // may be undefined if not provided.  All assertion methods provide
 // both the actual and expected values to the assertion error for
 // display purposes.
+    /**
+     * Node.js standard [`assert.fail`](http://nodejs.org/api/assert.html#assert_assert_fail_actual_expected_message_operator).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} actual Actual object
+     * @param {*} expected Expected object
+     * @param {string} message Message for assertion
+     * @param {string} operator Operator text
+     */
+    function fail(actual, expected, message, operator, stackStartFunction) {
+        var a = new Assertion(actual);
+        a.params = {
+            operator: operator,
+            expected: expected,
+            message: message,
+            stackStartFunction: stackStartFunction || fail
+        };
 
-function fail(actual, expected, message, operator, stackStartFunction) {
-  throw new assert.AssertionError({
-    message: message,
-    actual: actual,
-    expected: expected,
-    operator: operator,
-    stackStartFunction: stackStartFunction
-  });
-}
+        a.fail();
+    }
 
 // EXTENSION! allows for well behaved errors defined elsewhere.
-assert.fail = fail;
+    assert.fail = fail;
 
 // 4. Pure assertion tests whether a value is truthy, as determined
 // by !!guard.
@@ -1935,1098 +583,2485 @@ assert.fail = fail;
 // This statement is equivalent to assert.equal(true, !!guard,
 // message_opt);. To test strictly for the value true, use
 // assert.strictEqual(true, guard, message_opt);.
-
-function ok(value, message) {
-  if (!value) fail(value, true, message, '==', assert.ok);
-}
-assert.ok = ok;
+    /**
+     * Node.js standard [`assert.ok`](http://nodejs.org/api/assert.html#assert_assert_value_message_assert_ok_value_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} value
+     * @param {string} [message]
+     */
+    function ok(value, message) {
+        if(!value) fail(value, true, message, '==', assert.ok);
+    }
+    assert.ok = ok;
 
 // 5. The equality assertion tests shallow, coercive equality with
 // ==.
 // assert.equal(actual, expected, message_opt);
 
-assert.equal = function equal(actual, expected, message) {
-  if (actual != expected) fail(actual, expected, message, '==', assert.equal);
-};
+    /**
+     * Node.js standard [`assert.equal`](http://nodejs.org/api/assert.html#assert_assert_equal_actual_expected_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} actual
+     * @param {*} expected
+     * @param {string} [message]
+     */
+    assert.equal = function equal(actual, expected, message) {
+        if(actual != expected) fail(actual, expected, message, '==', assert.equal);
+    };
 
 // 6. The non-equality assertion tests for whether two objects are not equal
 // with != assert.notEqual(actual, expected, message_opt);
-
-assert.notEqual = function notEqual(actual, expected, message) {
-  if (actual == expected) {
-    fail(actual, expected, message, '!=', assert.notEqual);
-  }
-};
+    /**
+     * Node.js standard [`assert.notEqual`](http://nodejs.org/api/assert.html#assert_assert_notequal_actual_expected_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} actual
+     * @param {*} expected
+     * @param {string} [message]
+     */
+    assert.notEqual = function notEqual(actual, expected, message) {
+        if(actual == expected) {
+            fail(actual, expected, message, '!=', assert.notEqual);
+        }
+    };
 
 // 7. The equivalence assertion tests a deep equality relation.
 // assert.deepEqual(actual, expected, message_opt);
+    /**
+     * Node.js standard [`assert.deepEqual`](http://nodejs.org/api/assert.html#assert_assert_deepequal_actual_expected_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} actual
+     * @param {*} expected
+     * @param {string} [message]
+     */
+    assert.deepEqual = function deepEqual(actual, expected, message) {
+        if(!_deepEqual(actual, expected).result) {
+            fail(actual, expected, message, 'deepEqual', assert.deepEqual);
+        }
+    };
 
-assert.deepEqual = function deepEqual(actual, expected, message) {
-  if (!_deepEqual(actual, expected)) {
-    fail(actual, expected, message, 'deepEqual', assert.deepEqual);
-  }
-};
-
-function _deepEqual(actual, expected) {
-  // 7.1. All identical values are equivalent, as determined by ===.
-  if (actual === expected) {
-    return true;
-
-  } else if (util.isBuffer(actual) && util.isBuffer(expected)) {
-    if (actual.length != expected.length) return false;
-
-    for (var i = 0; i < actual.length; i++) {
-      if (actual[i] !== expected[i]) return false;
-    }
-
-    return true;
-
-  // 7.2. If the expected value is a Date object, the actual value is
-  // equivalent if it is also a Date object that refers to the same time.
-  } else if (util.isDate(actual) && util.isDate(expected)) {
-    return actual.getTime() === expected.getTime();
-
-  // 7.3 If the expected value is a RegExp object, the actual value is
-  // equivalent if it is also a RegExp object with the same source and
-  // properties (`global`, `multiline`, `lastIndex`, `ignoreCase`).
-  } else if (util.isRegExp(actual) && util.isRegExp(expected)) {
-    return actual.source === expected.source &&
-           actual.global === expected.global &&
-           actual.multiline === expected.multiline &&
-           actual.lastIndex === expected.lastIndex &&
-           actual.ignoreCase === expected.ignoreCase;
-
-  // 7.4. Other pairs that do not both pass typeof value == 'object',
-  // equivalence is determined by ==.
-  } else if (!util.isObject(actual) && !util.isObject(expected)) {
-    return actual == expected;
-
-  // 7.5 For all other Object pairs, including Array objects, equivalence is
-  // determined by having the same number of owned properties (as verified
-  // with Object.prototype.hasOwnProperty.call), the same set of keys
-  // (although not necessarily the same order), equivalent values for every
-  // corresponding key, and an identical 'prototype' property. Note: this
-  // accounts for both named and indexed properties on Arrays.
-  } else {
-    return objEquiv(actual, expected);
-  }
-}
-
-function isArguments(object) {
-  return Object.prototype.toString.call(object) == '[object Arguments]';
-}
-
-function objEquiv(a, b) {
-  if (util.isNullOrUndefined(a) || util.isNullOrUndefined(b))
-    return false;
-  // an identical 'prototype' property.
-  if (a.prototype !== b.prototype) return false;
-  //~~~I've managed to break Object.keys through screwy arguments passing.
-  //   Converting to array solves the problem.
-  if (isArguments(a)) {
-    if (!isArguments(b)) {
-      return false;
-    }
-    a = pSlice.call(a);
-    b = pSlice.call(b);
-    return _deepEqual(a, b);
-  }
-  try {
-    var ka = objectKeys(a),
-        kb = objectKeys(b),
-        key, i;
-  } catch (e) {//happens when one is a string literal and the other isn't
-    return false;
-  }
-  // having the same number of owned properties (keys incorporates
-  // hasOwnProperty)
-  if (ka.length != kb.length)
-    return false;
-  //the same set of keys (although not necessarily the same order),
-  ka.sort();
-  kb.sort();
-  //~~~cheap key test
-  for (i = ka.length - 1; i >= 0; i--) {
-    if (ka[i] != kb[i])
-      return false;
-  }
-  //equivalent values for every corresponding key, and
-  //~~~possibly expensive deep test
-  for (i = ka.length - 1; i >= 0; i--) {
-    key = ka[i];
-    if (!_deepEqual(a[key], b[key])) return false;
-  }
-  return true;
-}
 
 // 8. The non-equivalence assertion tests for any deep inequality.
 // assert.notDeepEqual(actual, expected, message_opt);
-
-assert.notDeepEqual = function notDeepEqual(actual, expected, message) {
-  if (_deepEqual(actual, expected)) {
-    fail(actual, expected, message, 'notDeepEqual', assert.notDeepEqual);
-  }
-};
+    /**
+     * Node.js standard [`assert.notDeepEqual`](http://nodejs.org/api/assert.html#assert_assert_notdeepequal_actual_expected_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} actual
+     * @param {*} expected
+     * @param {string} [message]
+     */
+    assert.notDeepEqual = function notDeepEqual(actual, expected, message) {
+        if(_deepEqual(actual, expected).result) {
+            fail(actual, expected, message, 'notDeepEqual', assert.notDeepEqual);
+        }
+    };
 
 // 9. The strict equality assertion tests strict equality, as determined by ===.
 // assert.strictEqual(actual, expected, message_opt);
-
-assert.strictEqual = function strictEqual(actual, expected, message) {
-  if (actual !== expected) {
-    fail(actual, expected, message, '===', assert.strictEqual);
-  }
-};
+    /**
+     * Node.js standard [`assert.strictEqual`](http://nodejs.org/api/assert.html#assert_assert_strictequal_actual_expected_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} actual
+     * @param {*} expected
+     * @param {string} [message]
+     */
+    assert.strictEqual = function strictEqual(actual, expected, message) {
+        if(actual !== expected) {
+            fail(actual, expected, message, '===', assert.strictEqual);
+        }
+    };
 
 // 10. The strict non-equality assertion tests for strict inequality, as
 // determined by !==.  assert.notStrictEqual(actual, expected, message_opt);
+    /**
+     * Node.js standard [`assert.notStrictEqual`](http://nodejs.org/api/assert.html#assert_assert_notstrictequal_actual_expected_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {*} actual
+     * @param {*} expected
+     * @param {string} [message]
+     */
+    assert.notStrictEqual = function notStrictEqual(actual, expected, message) {
+        if(actual === expected) {
+            fail(actual, expected, message, '!==', assert.notStrictEqual);
+        }
+    };
 
-assert.notStrictEqual = function notStrictEqual(actual, expected, message) {
-  if (actual === expected) {
-    fail(actual, expected, message, '!==', assert.notStrictEqual);
-  }
-};
+    function expectedException(actual, expected) {
+        if(!actual || !expected) {
+            return false;
+        }
 
-function expectedException(actual, expected) {
-  if (!actual || !expected) {
-    return false;
-  }
+        if(Object.prototype.toString.call(expected) == '[object RegExp]') {
+            return expected.test(actual);
+        } else if(actual instanceof expected) {
+            return true;
+        } else if(expected.call({}, actual) === true) {
+            return true;
+        }
 
-  if (Object.prototype.toString.call(expected) == '[object RegExp]') {
-    return expected.test(actual);
-  } else if (actual instanceof expected) {
-    return true;
-  } else if (expected.call({}, actual) === true) {
-    return true;
-  }
+        return false;
+    }
 
-  return false;
-}
+    function _throws(shouldThrow, block, expected, message) {
+        var actual;
 
-function _throws(shouldThrow, block, expected, message) {
-  var actual;
+        if(typeof expected == 'string') {
+            message = expected;
+            expected = null;
+        }
 
-  if (util.isString(expected)) {
-    message = expected;
-    expected = null;
-  }
+        try {
+            block();
+        } catch(e) {
+            actual = e;
+        }
 
-  try {
-    block();
-  } catch (e) {
-    actual = e;
-  }
+        message = (expected && expected.name ? ' (' + expected.name + ')' : '.') +
+        (message ? ' ' + message : '.');
 
-  message = (expected && expected.name ? ' (' + expected.name + ').' : '.') +
-            (message ? ' ' + message : '.');
+        if(shouldThrow && !actual) {
+            fail(actual, expected, 'Missing expected exception' + message);
+        }
 
-  if (shouldThrow && !actual) {
-    fail(actual, expected, 'Missing expected exception' + message);
-  }
+        if(!shouldThrow && expectedException(actual, expected)) {
+            fail(actual, expected, 'Got unwanted exception' + message);
+        }
 
-  if (!shouldThrow && expectedException(actual, expected)) {
-    fail(actual, expected, 'Got unwanted exception' + message);
-  }
-
-  if ((shouldThrow && actual && expected &&
-      !expectedException(actual, expected)) || (!shouldThrow && actual)) {
-    throw actual;
-  }
-}
+        if((shouldThrow && actual && expected && !expectedException(actual, expected)) || (!shouldThrow && actual)) {
+            throw actual;
+        }
+    }
 
 // 11. Expected to throw an error:
 // assert.throws(block, Error_opt, message_opt);
-
-assert.throws = function(block, /*optional*/error, /*optional*/message) {
-  _throws.apply(this, [true].concat(pSlice.call(arguments)));
-};
+    /**
+     * Node.js standard [`assert.throws`](http://nodejs.org/api/assert.html#assert_assert_throws_block_error_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {Function} block
+     * @param {Function} [error]
+     * @param {String} [message]
+     */
+    assert.throws = function(block, /*optional*/error, /*optional*/message) {
+        _throws.apply(this, [true].concat(pSlice.call(arguments)));
+    };
 
 // EXTENSION! This is annoying to write outside this module.
-assert.doesNotThrow = function(block, /*optional*/message) {
-  _throws.apply(this, [false].concat(pSlice.call(arguments)));
-};
-
-assert.ifError = function(err) { if (err) {throw err;}};
-
-var objectKeys = Object.keys || function (obj) {
-  var keys = [];
-  for (var key in obj) {
-    if (hasOwn.call(obj, key)) keys.push(key);
-  }
-  return keys;
-};
-
-},{"util/":22}],20:[function(require,module,exports){
-if (typeof Object.create === 'function') {
-  // implementation from standard node.js 'util' module
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    ctor.prototype = Object.create(superCtor.prototype, {
-      constructor: {
-        value: ctor,
-        enumerable: false,
-        writable: true,
-        configurable: true
-      }
-    });
-  };
-} else {
-  // old school shim for old browsers
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    var TempCtor = function () {}
-    TempCtor.prototype = superCtor.prototype
-    ctor.prototype = new TempCtor()
-    ctor.prototype.constructor = ctor
-  }
-}
-
-},{}],21:[function(require,module,exports){
-module.exports = function isBuffer(arg) {
-  return arg && typeof arg === 'object'
-    && typeof arg.copy === 'function'
-    && typeof arg.fill === 'function'
-    && typeof arg.readUInt8 === 'function';
-}
-},{}],22:[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-var formatRegExp = /%[sdj%]/g;
-exports.format = function(f) {
-  if (!isString(f)) {
-    var objects = [];
-    for (var i = 0; i < arguments.length; i++) {
-      objects.push(inspect(arguments[i]));
-    }
-    return objects.join(' ');
-  }
-
-  var i = 1;
-  var args = arguments;
-  var len = args.length;
-  var str = String(f).replace(formatRegExp, function(x) {
-    if (x === '%%') return '%';
-    if (i >= len) return x;
-    switch (x) {
-      case '%s': return String(args[i++]);
-      case '%d': return Number(args[i++]);
-      case '%j':
-        try {
-          return JSON.stringify(args[i++]);
-        } catch (_) {
-          return '[Circular]';
-        }
-      default:
-        return x;
-    }
-  });
-  for (var x = args[i]; i < len; x = args[++i]) {
-    if (isNull(x) || !isObject(x)) {
-      str += ' ' + x;
-    } else {
-      str += ' ' + inspect(x);
-    }
-  }
-  return str;
-};
-
-
-// Mark that a method should not be used.
-// Returns a modified function which warns once by default.
-// If --no-deprecation is set, then it is a no-op.
-exports.deprecate = function(fn, msg) {
-  // Allow for deprecating things in the process of starting up.
-  if (isUndefined(global.process)) {
-    return function() {
-      return exports.deprecate(fn, msg).apply(this, arguments);
+    /**
+     * Node.js standard [`assert.doesNotThrow`](http://nodejs.org/api/assert.html#assert_assert_doesnotthrow_block_message).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {Function} block
+     * @param {String} [message]
+     */
+    assert.doesNotThrow = function(block, /*optional*/message) {
+        _throws.apply(this, [false].concat(pSlice.call(arguments)));
     };
-  }
 
-  if (process.noDeprecation === true) {
-    return fn;
-  }
-
-  var warned = false;
-  function deprecated() {
-    if (!warned) {
-      if (process.throwDeprecation) {
-        throw new Error(msg);
-      } else if (process.traceDeprecation) {
-        console.trace(msg);
-      } else {
-        console.error(msg);
-      }
-      warned = true;
-    }
-    return fn.apply(this, arguments);
-  }
-
-  return deprecated;
-};
-
-
-var debugs = {};
-var debugEnviron;
-exports.debuglog = function(set) {
-  if (isUndefined(debugEnviron))
-    debugEnviron = process.env.NODE_DEBUG || '';
-  set = set.toUpperCase();
-  if (!debugs[set]) {
-    if (new RegExp('\\b' + set + '\\b', 'i').test(debugEnviron)) {
-      var pid = process.pid;
-      debugs[set] = function() {
-        var msg = exports.format.apply(exports, arguments);
-        console.error('%s %d: %s', set, pid, msg);
-      };
-    } else {
-      debugs[set] = function() {};
-    }
-  }
-  return debugs[set];
-};
-
-
-/**
- * Echos the value of a value. Trys to print the value out
- * in the best way possible given the different types.
- *
- * @param {Object} obj The object to print out.
- * @param {Object} opts Optional options object that alters the output.
- */
-/* legacy: obj, showHidden, depth, colors*/
-function inspect(obj, opts) {
-  // default options
-  var ctx = {
-    seen: [],
-    stylize: stylizeNoColor
-  };
-  // legacy...
-  if (arguments.length >= 3) ctx.depth = arguments[2];
-  if (arguments.length >= 4) ctx.colors = arguments[3];
-  if (isBoolean(opts)) {
-    // legacy...
-    ctx.showHidden = opts;
-  } else if (opts) {
-    // got an "options" object
-    exports._extend(ctx, opts);
-  }
-  // set default options
-  if (isUndefined(ctx.showHidden)) ctx.showHidden = false;
-  if (isUndefined(ctx.depth)) ctx.depth = 2;
-  if (isUndefined(ctx.colors)) ctx.colors = false;
-  if (isUndefined(ctx.customInspect)) ctx.customInspect = true;
-  if (ctx.colors) ctx.stylize = stylizeWithColor;
-  return formatValue(ctx, obj, ctx.depth);
-}
-exports.inspect = inspect;
-
-
-// http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
-inspect.colors = {
-  'bold' : [1, 22],
-  'italic' : [3, 23],
-  'underline' : [4, 24],
-  'inverse' : [7, 27],
-  'white' : [37, 39],
-  'grey' : [90, 39],
-  'black' : [30, 39],
-  'blue' : [34, 39],
-  'cyan' : [36, 39],
-  'green' : [32, 39],
-  'magenta' : [35, 39],
-  'red' : [31, 39],
-  'yellow' : [33, 39]
-};
-
-// Don't use 'blue' not visible on cmd.exe
-inspect.styles = {
-  'special': 'cyan',
-  'number': 'yellow',
-  'boolean': 'yellow',
-  'undefined': 'grey',
-  'null': 'bold',
-  'string': 'green',
-  'date': 'magenta',
-  // "name": intentionally not styling
-  'regexp': 'red'
-};
-
-
-function stylizeWithColor(str, styleType) {
-  var style = inspect.styles[styleType];
-
-  if (style) {
-    return '\u001b[' + inspect.colors[style][0] + 'm' + str +
-           '\u001b[' + inspect.colors[style][1] + 'm';
-  } else {
-    return str;
-  }
-}
-
-
-function stylizeNoColor(str, styleType) {
-  return str;
-}
-
-
-function arrayToHash(array) {
-  var hash = {};
-
-  array.forEach(function(val, idx) {
-    hash[val] = true;
-  });
-
-  return hash;
-}
-
-
-function formatValue(ctx, value, recurseTimes) {
-  // Provide a hook for user-specified inspect functions.
-  // Check that value is an object with an inspect function on it
-  if (ctx.customInspect &&
-      value &&
-      isFunction(value.inspect) &&
-      // Filter out the util module, it's inspect function is special
-      value.inspect !== exports.inspect &&
-      // Also filter out any prototype objects using the circular check.
-      !(value.constructor && value.constructor.prototype === value)) {
-    var ret = value.inspect(recurseTimes, ctx);
-    if (!isString(ret)) {
-      ret = formatValue(ctx, ret, recurseTimes);
-    }
-    return ret;
-  }
-
-  // Primitive types cannot have properties
-  var primitive = formatPrimitive(ctx, value);
-  if (primitive) {
-    return primitive;
-  }
-
-  // Look up the keys of the object.
-  var keys = Object.keys(value);
-  var visibleKeys = arrayToHash(keys);
-
-  if (ctx.showHidden) {
-    keys = Object.getOwnPropertyNames(value);
-  }
-
-  // IE doesn't make error fields non-enumerable
-  // http://msdn.microsoft.com/en-us/library/ie/dww52sbt(v=vs.94).aspx
-  if (isError(value)
-      && (keys.indexOf('message') >= 0 || keys.indexOf('description') >= 0)) {
-    return formatError(value);
-  }
-
-  // Some type of object without properties can be shortcutted.
-  if (keys.length === 0) {
-    if (isFunction(value)) {
-      var name = value.name ? ': ' + value.name : '';
-      return ctx.stylize('[Function' + name + ']', 'special');
-    }
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    }
-    if (isDate(value)) {
-      return ctx.stylize(Date.prototype.toString.call(value), 'date');
-    }
-    if (isError(value)) {
-      return formatError(value);
-    }
-  }
-
-  var base = '', array = false, braces = ['{', '}'];
-
-  // Make Array say that they are Array
-  if (isArray(value)) {
-    array = true;
-    braces = ['[', ']'];
-  }
-
-  // Make functions say that they are functions
-  if (isFunction(value)) {
-    var n = value.name ? ': ' + value.name : '';
-    base = ' [Function' + n + ']';
-  }
-
-  // Make RegExps say that they are RegExps
-  if (isRegExp(value)) {
-    base = ' ' + RegExp.prototype.toString.call(value);
-  }
-
-  // Make dates with properties first say the date
-  if (isDate(value)) {
-    base = ' ' + Date.prototype.toUTCString.call(value);
-  }
-
-  // Make error with message first say the error
-  if (isError(value)) {
-    base = ' ' + formatError(value);
-  }
-
-  if (keys.length === 0 && (!array || value.length == 0)) {
-    return braces[0] + base + braces[1];
-  }
-
-  if (recurseTimes < 0) {
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    } else {
-      return ctx.stylize('[Object]', 'special');
-    }
-  }
-
-  ctx.seen.push(value);
-
-  var output;
-  if (array) {
-    output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
-  } else {
-    output = keys.map(function(key) {
-      return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
-    });
-  }
-
-  ctx.seen.pop();
-
-  return reduceToSingleString(output, base, braces);
-}
-
-
-function formatPrimitive(ctx, value) {
-  if (isUndefined(value))
-    return ctx.stylize('undefined', 'undefined');
-  if (isString(value)) {
-    var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
-                                             .replace(/'/g, "\\'")
-                                             .replace(/\\"/g, '"') + '\'';
-    return ctx.stylize(simple, 'string');
-  }
-  if (isNumber(value))
-    return ctx.stylize('' + value, 'number');
-  if (isBoolean(value))
-    return ctx.stylize('' + value, 'boolean');
-  // For some reason typeof null is "object", so special case here.
-  if (isNull(value))
-    return ctx.stylize('null', 'null');
-}
-
-
-function formatError(value) {
-  return '[' + Error.prototype.toString.call(value) + ']';
-}
-
-
-function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
-  var output = [];
-  for (var i = 0, l = value.length; i < l; ++i) {
-    if (hasOwnProperty(value, String(i))) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-          String(i), true));
-    } else {
-      output.push('');
-    }
-  }
-  keys.forEach(function(key) {
-    if (!key.match(/^\d+$/)) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-          key, true));
-    }
-  });
-  return output;
-}
-
-
-function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
-  var name, str, desc;
-  desc = Object.getOwnPropertyDescriptor(value, key) || { value: value[key] };
-  if (desc.get) {
-    if (desc.set) {
-      str = ctx.stylize('[Getter/Setter]', 'special');
-    } else {
-      str = ctx.stylize('[Getter]', 'special');
-    }
-  } else {
-    if (desc.set) {
-      str = ctx.stylize('[Setter]', 'special');
-    }
-  }
-  if (!hasOwnProperty(visibleKeys, key)) {
-    name = '[' + key + ']';
-  }
-  if (!str) {
-    if (ctx.seen.indexOf(desc.value) < 0) {
-      if (isNull(recurseTimes)) {
-        str = formatValue(ctx, desc.value, null);
-      } else {
-        str = formatValue(ctx, desc.value, recurseTimes - 1);
-      }
-      if (str.indexOf('\n') > -1) {
-        if (array) {
-          str = str.split('\n').map(function(line) {
-            return '  ' + line;
-          }).join('\n').substr(2);
-        } else {
-          str = '\n' + str.split('\n').map(function(line) {
-            return '   ' + line;
-          }).join('\n');
+    /**
+     * Node.js standard [`assert.ifError`](http://nodejs.org/api/assert.html#assert_assert_iferror_value).
+     * @static
+     * @memberOf should
+     * @category assertion assert
+     * @param {Error} err
+     */
+    assert.ifError = function(err) {
+        if(err) {
+            throw err;
         }
-      }
-    } else {
-      str = ctx.stylize('[Circular]', 'special');
-    }
-  }
-  if (isUndefined(name)) {
-    if (array && key.match(/^\d+$/)) {
-      return str;
-    }
-    name = JSON.stringify('' + key);
-    if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
-      name = name.substr(1, name.length - 2);
-      name = ctx.stylize(name, 'name');
-    } else {
-      name = name.replace(/'/g, "\\'")
-                 .replace(/\\"/g, '"')
-                 .replace(/(^"|"$)/g, "'");
-      name = ctx.stylize(name, 'string');
-    }
-  }
+    };
 
-  return name + ': ' + str;
-}
+},{"./../assertion":3,"./../util":17,"should-equal":18}],6:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
 
+    var util = require('../util')
+        , assert = require('./_assert')
+        , AssertionError = require('../assertion-error');
 
-function reduceToSingleString(output, base, braces) {
-  var numLinesEst = 0;
-  var length = output.reduce(function(prev, cur) {
-    numLinesEst++;
-    if (cur.indexOf('\n') >= 0) numLinesEst++;
-    return prev + cur.replace(/\u001b\[\d\d?m/g, '').length + 1;
-  }, 0);
+    module.exports = function(should) {
+        var i = should.format;
 
-  if (length > 60) {
-    return braces[0] +
-           (base === '' ? '' : base + '\n ') +
-           ' ' +
-           output.join(',\n  ') +
-           ' ' +
-           braces[1];
-  }
+        /*
+         * Expose assert to should
+         *
+         * This allows you to do things like below
+         * without require()ing the assert module.
+         *
+         *    should.equal(foo.bar, undefined);
+         *
+         */
+        util.merge(should, assert);
 
-  return braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
-}
-
-
-// NOTE: These type checking functions intentionally don't use `instanceof`
-// because it is fragile and can be easily faked with `Object.create()`.
-function isArray(ar) {
-  return Array.isArray(ar);
-}
-exports.isArray = isArray;
-
-function isBoolean(arg) {
-  return typeof arg === 'boolean';
-}
-exports.isBoolean = isBoolean;
-
-function isNull(arg) {
-  return arg === null;
-}
-exports.isNull = isNull;
-
-function isNullOrUndefined(arg) {
-  return arg == null;
-}
-exports.isNullOrUndefined = isNullOrUndefined;
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-exports.isNumber = isNumber;
-
-function isString(arg) {
-  return typeof arg === 'string';
-}
-exports.isString = isString;
-
-function isSymbol(arg) {
-  return typeof arg === 'symbol';
-}
-exports.isSymbol = isSymbol;
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-exports.isUndefined = isUndefined;
-
-function isRegExp(re) {
-  return isObject(re) && objectToString(re) === '[object RegExp]';
-}
-exports.isRegExp = isRegExp;
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-exports.isObject = isObject;
-
-function isDate(d) {
-  return isObject(d) && objectToString(d) === '[object Date]';
-}
-exports.isDate = isDate;
-
-function isError(e) {
-  return isObject(e) &&
-      (objectToString(e) === '[object Error]' || e instanceof Error);
-}
-exports.isError = isError;
-
-function isFunction(arg) {
-  return typeof arg === 'function';
-}
-exports.isFunction = isFunction;
-
-function isPrimitive(arg) {
-  return arg === null ||
-         typeof arg === 'boolean' ||
-         typeof arg === 'number' ||
-         typeof arg === 'string' ||
-         typeof arg === 'symbol' ||  // ES6 symbol
-         typeof arg === 'undefined';
-}
-exports.isPrimitive = isPrimitive;
-
-exports.isBuffer = require('./support/isBuffer');
-
-function objectToString(o) {
-  return Object.prototype.toString.call(o);
-}
-
-
-function pad(n) {
-  return n < 10 ? '0' + n.toString(10) : n.toString(10);
-}
-
-
-var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
-              'Oct', 'Nov', 'Dec'];
-
-// 26 Feb 16:19:34
-function timestamp() {
-  var d = new Date();
-  var time = [pad(d.getHours()),
-              pad(d.getMinutes()),
-              pad(d.getSeconds())].join(':');
-  return [d.getDate(), months[d.getMonth()], time].join(' ');
-}
-
-
-// log is just a thin wrapper to console.log that prepends a timestamp
-exports.log = function() {
-  console.log('%s - %s', timestamp(), exports.format.apply(exports, arguments));
-};
-
-
-/**
- * Inherit the prototype methods from one constructor into another.
- *
- * The Function.prototype.inherits from lang.js rewritten as a standalone
- * function (not on Function.prototype). NOTE: If this file is to be loaded
- * during bootstrapping this function needs to be rewritten using some native
- * functions as prototype setup using normal JavaScript does not work as
- * expected during bootstrapping (see mirror.js in r114903).
- *
- * @param {function} ctor Constructor function which needs to inherit the
- *     prototype.
- * @param {function} superCtor Constructor function to inherit prototype from.
- */
-exports.inherits = require('inherits');
-
-exports._extend = function(origin, add) {
-  // Don't do anything if add isn't an object
-  if (!add || !isObject(add)) return origin;
-
-  var keys = Object.keys(add);
-  var i = keys.length;
-  while (i--) {
-    origin[keys[i]] = add[keys[i]];
-  }
-  return origin;
-};
-
-function hasOwnProperty(obj, prop) {
-  return Object.prototype.hasOwnProperty.call(obj, prop);
-}
-
-},{"./support/isBuffer":21,"inherits":20}],23:[function(require,module,exports){
-var toString = Object.prototype.toString;
-var hasOwnProperty = Object.prototype.hasOwnProperty;
-
-var isPromiseExist = typeof Promise !== 'undefined';
-var isBufferExist = typeof Buffer !== 'undefined';
-
-var NUMBER = 'number';
-var UNDEFINED = 'undefined';
-var STRING = 'string';
-var BOOLEAN = 'boolean';
-var OBJECT = 'object';
-var FUNCTION = 'function';
-var NULL = 'null';
-var ARRAY = 'array';
-var REGEXP = 'regexp';
-var DATE = 'date';
-var ERROR = 'error';
-var ARGUMENTS = 'arguments';
-var SYMBOL = 'symbol';
-var ARRAY_BUFFER = 'array-buffer';
-var TYPED_ARRAY = 'typed-array';
-var DATA_VIEW = 'data-view';
-var MAP = 'map';
-var SET = 'set';
-var WEAK_SET = 'weak-set';
-var WEAK_MAP = 'weak-map';
-var PROMISE = 'promise';
-
-// node buffer
-var BUFFER = 'buffer';
-
-// dom html element
-var HTML_ELEMENT = 'html-element';
-var DOCUMENT = 'document';
-var WINDOW = 'window';
-var FILE = 'file';
-var FILE_LIST = 'file-list';
-var BLOB = 'blob';
-
-function getType(instance) {
-    var type = typeof instance;
-
-    switch (type) {
-        case NUMBER:
-            return NUMBER;
-        case UNDEFINED:
-            return UNDEFINED;
-        case STRING:
-            return STRING;
-        case BOOLEAN:
-            return BOOLEAN;
-        case FUNCTION:
-            return FUNCTION;
-        case SYMBOL:
-            return SYMBOL;
-        case OBJECT:
-            if (instance === null) return NULL;
-
-            var clazz = toString.call(instance);
-
-            switch (clazz) {
-                case '[object String]':
-                    return STRING;
-                case '[object Boolean]':
-                    return BOOLEAN;
-                case '[object Number]':
-                    return NUMBER;
-                case '[object Array]':
-                    return ARRAY;
-                case '[object RegExp]':
-                    return REGEXP;
-                case '[object Error]':
-                    return ERROR;
-                case '[object Date]':
-                    return DATE;
-                case '[object Arguments]':
-                    return ARGUMENTS;
-                case '[object Math]':
-                    return OBJECT;
-                case '[object JSON]':
-                    return OBJECT;
-                case '[object ArrayBuffer]':
-                    return ARRAY_BUFFER;
-                case '[object Int8Array]':
-                    return TYPED_ARRAY;
-                case '[object Uint8Array]':
-                    return TYPED_ARRAY;
-                case '[object Uint8ClampedArray]':
-                    return TYPED_ARRAY;
-                case '[object Int16Array]':
-                    return TYPED_ARRAY;
-                case '[object Uint16Array]':
-                    return TYPED_ARRAY;
-                case '[object Int32Array]':
-                    return TYPED_ARRAY;
-                case '[object Uint32Array]':
-                    return TYPED_ARRAY;
-                case '[object Float32Array]':
-                    return TYPED_ARRAY;
-                case '[object Float64Array]':
-                    return TYPED_ARRAY;
-                case '[object DataView]':
-                    return DATA_VIEW;
-                case '[object Map]':
-                    return MAP;
-                case '[object WeakMap]':
-                    return WEAK_MAP;
-                case '[object Set]':
-                    return SET;
-                case '[object WeakSet]':
-                    return WEAK_SET;
-                case '[object Promise]':
-                    return PROMISE;
-                case '[object Window]':
-                    return WINDOW;
-                case '[object HTMLDocument]':
-                    return DOCUMENT;
-                case '[object Blob]':
-                    return BLOB;
-                case '[object File]':
-                    return FILE;
-                case '[object FileList]':
-                    return FILE_LIST;
-                default:
-                    if (isPromiseExist && instance instanceof Promise) return PROMISE;
-
-                    if (isBufferExist && instance instanceof Buffer) return BUFFER;
-
-                    if (/^\[object HTML\w+Element\]$/.test(clazz)) return HTML_ELEMENT;
-
-                    if (clazz === '[object Object]') return OBJECT;
+        /**
+         * Assert _obj_ exists, with optional message.
+         *
+         * @static
+         * @memberOf should
+         * @category assertion assert
+         * @alias should.exists
+         * @param {*} obj
+         * @param {String} [msg]
+         * @example
+         *
+         * should.exist(1);
+         * should.exist(new Date());
+         */
+        should.exist = should.exists = function(obj, msg) {
+            if(null == obj) {
+                throw new AssertionError({
+                    message: msg || ('expected ' + i(obj) + ' to exist'), stackStartFunction: should.exist
+                });
             }
-    }
-}
+        };
 
-function eq(a, b, stackA, stackB) {
-    // equal a and b exit early
-    if (a === b) {
-        // check for +0 !== -0;
-        return a !== 0 || (1 / a == 1 / b);
-    }
+        should.not = {};
+        /**
+         * Asserts _obj_ does not exist, with optional message.
+         *
+         * @name not.exist
+         * @static
+         * @memberOf should
+         * @category assertion assert
+         * @alias should.not.exists
+         * @param {*} obj
+         * @param {String} [msg]
+         * @example
+         *
+         * should.not.exist(null);
+         * should.not.exist(void 0);
+         */
+        should.not.exist = should.not.exists = function(obj, msg) {
+            if(null != obj) {
+                throw new AssertionError({
+                    message: msg || ('expected ' + i(obj) + ' to not exist'), stackStartFunction: should.not.exist
+                });
+            }
+        };
+    };
+},{"../assertion-error":2,"../util":17,"./_assert":5}],7:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
 
-    var typeA = getType(a),
-        typeB = getType(b);
+    module.exports = function(should, Assertion) {
+        /**
+         * Assert given object is exactly `true`.
+         *
+         * @name true
+         * @memberOf Assertion
+         * @category assertion bool
+         * @alias Assertion#True
+         * @example
+         *
+         * (true).should.be.true;
+         * false.should.not.be.True;
+         *
+         * ({ a: 10}).should.not.be.true;
+         */
+        Assertion.add('true', function() {
+            this.is.exactly(true);
+        }, true);
 
-    // if objects has different types they are not equals
-    if (typeA !== typeB) return false;
+        Assertion.alias('true', 'True');
 
-    switch (typeA) {
-        case NUMBER:
-            return (a !== a) ? b !== b
-                // but treat `+0` vs. `-0` as not equal
-                : (a === 0 ? (1 / a === 1 / b) : a === b);
+        /**
+         * Assert given object is exactly `false`.
+         *
+         * @name false
+         * @memberOf Assertion
+         * @category assertion bool
+         * @alias Assertion#False
+         * @example
+         *
+         * (true).should.not.be.false;
+         * false.should.be.False;
+         */
+        Assertion.add('false', function() {
+            this.is.exactly(false);
+        }, true);
 
-        case REGEXP:
-            return String(a) === String(b);
+        Assertion.alias('false', 'False');
 
-        case BOOLEAN:
-        case STRING:
-            return a === b;
+        /**
+         * Assert given object is thuthy according javascript type conversions.
+         *
+         * @name ok
+         * @memberOf Assertion
+         * @category assertion bool
+         * @example
+         *
+         * (true).should.be.ok;
+         * ''.should.not.be.ok;
+         * should(null).not.be.ok;
+         * should(void 0).not.be.ok;
+         *
+         * (10).should.be.ok;
+         * (0).should.not.be.ok;
+         */
+        Assertion.add('ok', function() {
+            this.params = { operator: 'to be truthy' };
 
-        case DATE:
-            return +a === +b;
+            this.assert(this.obj);
+        }, true);
+    };
+},{}],8:[function(require,module,exports){
+    module.exports = function(should, Assertion) {
+        /**
+         * Simple chaining. It actually do nothing.
+         *
+         * @memberOf Assertion
+         * @name be
+         * @alias Assertion#an
+         * @alias Assertion#of
+         * @alias Assertion#a
+         * @alias Assertion#and
+         * @alias Assertion#have
+         * @alias Assertion#with
+         * @alias Assertion#is
+         * @alias Assertion#which
+         * @alias Assertion#the
+         * @category assertion chaining
+         */
+        ['an', 'of', 'a', 'and', 'be', 'has', 'have', 'with', 'is', 'which', 'the', 'it'].forEach(function(name) {
+            Assertion.addChain(name);
+        });
+    };
 
-        case BUFFER:
-            if(a.length !== b.length) return false;
+},{}],9:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
 
-            var l = a.length;
-            while(l--) if(a[l] !== b[l]) return false;
+    var util = require('../util');
+    var eql = require('should-equal');
 
-            return true;
+    module.exports = function(should, Assertion) {
+        var i = should.format;
+        var type = should.type;
 
-        case ERROR:
-            //only check not enumerable properties, and check arrays later
-            if(a.name !== b.name || a.message !== b.message) return false;
+        /**
+         * Assert that given object contain something that equal to `other`. It uses `should-equal` for equality checks.
+         * If given object is array it search that one of elements was equal to `other`.
+         * If given object is string it checks if `other` is a substring - expected that `other` is a string.
+         * If given object is Object it checks that `other` is a subobject - expected that `other` is a object.
+         *
+         * @name containEql
+         * @memberOf Assertion
+         * @category assertion contain
+         * @param {*} other Nested object
+         * @example
+         *
+         * [1, 2, 3].should.containEql(1);
+         * [{ a: 1 }, 'a', 10].should.containEql({ a: 1 });
+         *
+         * 'abc'.should.containEql('b');
+         * 'ab1c'.should.containEql(1);
+         *
+         * ({ a: 10, c: { d: 10 }}).should.containEql({ a: 10 });
+         * ({ a: 10, c: { d: 10 }}).should.containEql({ c: { d: 10 }});
+         * ({ a: 10, c: { d: 10 }}).should.containEql({ b: 10 });
+         * // throws AssertionError: expected { a: 10, c: { d: 10 } } to contain { b: 10 }
+         * //            expected { a: 10, c: { d: 10 } } to have property b
+         */
+        Assertion.add('containEql', function(other) {
+            this.params = {operator: 'to contain ' + i(other)};
 
-            break;
+            this.is.not.null.and.not.undefined;
 
-        case ARRAY_BUFFER:
-            if(a.byteLength !== b.byteLength) return false;
+            var obj = this.obj;
+            var tpe = should.type(obj);
 
-            if(typeof Int8Array !== 'undefined') {
-                var viewA = new Int8Array(a);
-                var viewB = new Int8Array(b);
-
-                var l = a.byteLength;
-                while(l--) if(a[l] !== b[l]) return false;
-
-                return true;
+            if(tpe == should.type.STRING) {
+                this.assert(obj.indexOf(String(other)) >= 0);
+            } else if(util.isIndexable(obj)) {
+                this.assert(util.some(obj, function(v) {
+                    return eql(v, other).result;
+                }));
             } else {
+                this.have.properties(other);
+            }
+        });
+
+        /**
+         * Assert that given object is contain equally structured object on the same depth level.
+         * If given object is an array and `other` is an array it checks that the eql elements is going in the same sequence in given array (recursive)
+         * For string it is working as `Assertion#containEql
+         * If given object is an object it checks that the same keys contain deep equal values (recursive)
+         * On other cases it try to check with `.eql`
+         *
+         * @name containDeepOrdered
+         * @memberOf Assertion
+         * @category assertion contain
+         * @param {*} other Nested object
+         * @example
+         *
+         * [ 1, 2, 3].should.containDeepOrdered([1, 2]);
+         * [ 1, 2, [ 1, 2, 3 ]].should.containDeepOrdered([ 1, [ 2, 3 ]]);
+         *
+         * '123'.should.containDeepOrdered('1')
+         *
+         * ({ a: 10, b: { c: 10, d: [1, 2, 3] }}).should.containDeepOrdered({a: 10});
+         * ({ a: 10, b: { c: 10, d: [1, 2, 3] }}).should.containDeepOrdered({b: {c: 10}});
+         * ({ a: 10, b: { c: 10, d: [1, 2, 3] }}).should.containDeepOrdered({b: {d: [1, 3]}});
+         */
+        Assertion.add('containDeepOrdered', function(other) {
+            this.params = {operator: 'to contain ' + i(other)};
+
+            var obj = this.obj;
+            if(type(obj) == type.STRING) {// expect other to be string
+                this.assert(obj.indexOf(String(other)) >= 0);
+            } else if(util.isIndexable(obj) && util.isIndexable(other)) {
+                for(var objIdx = 0, otherIdx = 0, objLength = util.length(obj), otherLength = util.length(other); objIdx < objLength && otherIdx < otherLength; objIdx++) {
+                    try {
+                        should(obj[objIdx]).containDeepOrdered(other[otherIdx]);
+                        otherIdx++;
+                    } catch(e) {
+                        if(e instanceof should.AssertionError) {
+                            continue;
+                        }
+                        throw e;
+                    }
+                }
+
+                this.assert(otherIdx == otherLength);
+            } else if(obj != null && other != null && typeof obj == 'object' && typeof other == 'object') {// object contains object case
+                util.forEach(other, function(value, key) {
+                    should(obj[key]).containDeepOrdered(value);
+                });
+
+                // if both objects is empty means we finish traversing - and we need to compare for hidden values
+                if(util.isEmptyObject(other)) {
+                    this.eql(other);
+                }
+            } else {
+                this.eql(other);
+            }
+        });
+
+        /**
+         * The same like `Assertion#containDeepOrdered` but all checks on arrays without order.
+         *
+         * @name containDeep
+         * @memberOf Assertion
+         * @category assertion contain
+         * @param {*} other Nested object
+         * @example
+         *
+         * [ 1, 2, 3].should.containDeep([2, 1]);
+         * [ 1, 2, [ 1, 2, 3 ]].should.containDeep([ 1, [ 3, 1 ]]);
+         */
+        Assertion.add('containDeep', function(other) {
+            this.params = {operator: 'to contain ' + i(other)};
+
+            var obj = this.obj;
+            if(typeof obj == 'string') {// expect other to be string
+                this.assert(obj.indexOf(String(other)) >= 0);
+            } else if(util.isIndexable(obj) && util.isIndexable(other)) {
+                var usedKeys = {};
+                util.forEach(other, function(otherItem) {
+                    this.assert(util.some(obj, function(item, index) {
+                        if(index in usedKeys) return false;
+
+                        try {
+                            should(item).containDeep(otherItem);
+                            usedKeys[index] = true;
+                            return true;
+                        } catch(e) {
+                            if(e instanceof should.AssertionError) {
+                                return false;
+                            }
+                            throw e;
+                        }
+                    }));
+                }, this);
+            } else if(obj != null && other != null && typeof obj == 'object' && typeof other == 'object') {// object contains object case
+                util.forEach(other, function(value, key) {
+                    should(obj[key]).containDeep(value);
+                });
+
+                // if both objects is empty means we finish traversing - and we need to compare for hidden values
+                if(util.isEmptyObject(other)) {
+                    this.eql(other);
+                }
+            } else {
+                this.eql(other);
+            }
+        });
+
+    };
+
+},{"../util":17,"should-equal":18}],10:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+
+    var eql = require('should-equal');
+    var type = require('should-type');
+    var util = require('../util');
+
+    function formatEqlResult(r, a, b, format) {
+        return ((r.path.length > 0 ? 'at ' + r.path.map(util.formatProp).join(' -> ') : '') +
+        (r.a === a ? '' : ', A has ' + format(r.a)) +
+        (r.b === b ? '' : ' and B has ' + format(r.b)) +
+        (r.showReason ? ' because ' + r.reason: '')).trim();
+    }
+
+    module.exports = function(should, Assertion) {
+
+        /**
+         * Deep object equality comparison. For full spec see [`should-equal tests`](https://github.com/shouldjs/equal/blob/master/test.js).
+         *
+         * @name eql
+         * @memberOf Assertion
+         * @category assertion equality
+         * @param {*} val Expected value
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * (10).should.be.eql(10);
+         * ('10').should.not.be.eql(10);
+         * (-0).should.not.be.eql(+0);
+         *
+         * NaN.should.be.eql(NaN);
+         *
+         * ({ a: 10}).should.be.eql({ a: 10 });
+         * [ 'a' ].should.not.be.eql({ '0': 'a' });
+         */
+        Assertion.add('eql', function(val, description) {
+            this.params = {operator: 'to equal', expected: val, message: description};
+
+            var strictResult = eql(this.obj, val, should.config);
+            this.params.details = strictResult.result ? '': formatEqlResult(strictResult, this.obj, val, should.format);
+
+            this.params.showDiff = type(this.obj) == type(val);
+
+            this.assert(strictResult.result);
+        });
+
+        /**
+         * Exact comparison using ===.
+         *
+         * @name equal
+         * @memberOf Assertion
+         * @category assertion equality
+         * @alias Assertion#exactly
+         * @param {*} val Expected value
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * 10.should.be.equal(10);
+         * 'a'.should.be.exactly('a');
+         *
+         * should(null).be.exactly(null);
+         */
+        Assertion.add('equal', function(val, description) {
+            this.params = {operator: 'to be', expected: val, message: description};
+
+            this.params.showDiff = type(this.obj) == type(val);
+
+            this.assert(val === this.obj);
+        });
+
+        Assertion.alias('equal', 'exactly');
+    };
+},{"../util":17,"should-equal":18,"should-type":20}],11:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+    var util = require('../util');
+
+    module.exports = function(should, Assertion) {
+        var i = should.format;
+
+        /**
+         * Assert given function throws error with such message.
+         *
+         * @name throw
+         * @memberOf Assertion
+         * @category assertion errors
+         * @alias Assertion#throwError
+         * @param {string|RegExp|Function|Object|GeneratorFunction|GeneratorObject} [message] Message to match or properties
+         * @param {Object} [properties] Optional properties that will be matched to thrown error
+         * @example
+         *
+         * (function(){ throw new Error('fail') }).should.throw();
+         * (function(){ throw new Error('fail') }).should.throw('fail');
+         * (function(){ throw new Error('fail') }).should.throw(/fail/);
+         *
+         * (function(){ throw new Error('fail') }).should.throw(Error);
+         * var error = new Error();
+         * error.a = 10;
+         * (function(){ throw error; }).should.throw(Error, { a: 10 });
+         * (function(){ throw error; }).should.throw({ a: 10 });
+         * (function*() {
+   *   yield throwError();
+   * }).should.throw();
+         */
+        Assertion.add('throw', function(message, properties) {
+            var fn = this.obj
+                , err = {}
+                , errorInfo = ''
+                , thrown = false;
+
+            if(util.isGeneratorFunction(fn)) {
+                return fn().should.throw(message, properties);
+            } else if(util.isGeneratorObject(fn)) {
+                return fn.next.should.throw(message, properties);
+            }
+
+            this.is.a.Function;
+
+            var errorMatched = true;
+
+            try {
+                fn();
+            } catch(e) {
+                thrown = true;
+                err = e;
+            }
+
+            if(thrown) {
+                if(message) {
+                    if('string' == typeof message) {
+                        errorMatched = message == err.message;
+                    } else if(message instanceof RegExp) {
+                        errorMatched = message.test(err.message);
+                    } else if('function' == typeof message) {
+                        errorMatched = err instanceof message;
+                    } else if(null != message) {
+                        try {
+                            err.should.match(message);
+                        } catch(e) {
+                            if(e instanceof should.AssertionError) {
+                                errorInfo = ": " + e.message;
+                                errorMatched = false;
+                            } else {
+                                throw e;
+                            }
+                        }
+                    }
+
+                    if(!errorMatched) {
+                        if('string' == typeof message || message instanceof RegExp) {
+                            errorInfo = " with a message matching " + i(message) + ", but got '" + err.message + "'";
+                        } else if('function' == typeof message) {
+                            errorInfo = " of type " + util.functionName(message) + ", but got " + util.functionName(err.constructor);
+                        }
+                    } else if('function' == typeof message && properties) {
+                        try {
+                            err.should.match(properties);
+                        } catch(e) {
+                            if(e instanceof should.AssertionError) {
+                                errorInfo = ": " + e.message;
+                                errorMatched = false;
+                            } else {
+                                throw e;
+                            }
+                        }
+                    }
+                } else {
+                    errorInfo = " (got " + i(err) + ")";
+                }
+            }
+
+            this.params = { operator: 'to throw exception' + errorInfo };
+
+            this.assert(thrown);
+            this.assert(errorMatched);
+        });
+
+        Assertion.alias('throw', 'throwError');
+    };
+},{"../util":17}],12:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+
+    var util = require('../util');
+    var eql = require('should-equal');
+
+    module.exports = function(should, Assertion) {
+        var i = should.format;
+
+        /**
+         * Asserts if given object match `other` object, using some assumptions:
+         * First object matched if they are equal,
+         * If `other` is a regexp and given object is a string check on matching with regexp
+         * If `other` is a regexp and given object is an array check if all elements matched regexp
+         * If `other` is a regexp and given object is an object check values on matching regexp
+         * If `other` is a function check if this function throws AssertionError on given object or return false - it will be assumed as not matched
+         * If `other` is an object check if the same keys matched with above rules
+         * All other cases failed
+         *
+         * @name match
+         * @memberOf Assertion
+         * @category assertion matching
+         * @param {*} other Object to match
+         * @param {string} [description] Optional message
+         * @example
+         * 'foobar'.should.match(/^foo/);
+         * 'foobar'.should.not.match(/^bar/);
+         *
+         * ({ a: 'foo', c: 'barfoo' }).should.match(/foo$/);
+         *
+         * ['a', 'b', 'c'].should.match(/[a-z]/);
+         *
+         * (5).should.not.match(function(n) {
+   *   return n < 0;
+   * });
+         * (5).should.not.match(function(it) {
+   *    it.should.be.an.Array;
+   * });
+         * ({ a: 10, b: 'abc', c: { d: 10 }, d: 0 }).should
+         * .match({ a: 10, b: /c$/, c: function(it) {
+   *    return it.should.have.property('d', 10);
+   * }});
+         *
+         * [10, 'abc', { d: 10 }, 0].should
+         * .match({ '0': 10, '1': /c$/, '2': function(it) {
+   *    return it.should.have.property('d', 10);
+   * }});
+         */
+        Assertion.add('match', function(other, description) {
+            this.params = {operator: 'to match ' + i(other), message: description};
+
+            if(!eql(this.obj, other).result) {
+                if(other instanceof RegExp) { // something - regex
+
+                    if(typeof this.obj == 'string') {
+
+                        this.assert(other.exec(this.obj));
+                    } else if(util.isIndexable(this.obj)) {
+                        util.forEach(this.obj, function(item) {
+                            this.assert(other.exec(item));// should we try to convert to String and exec?
+                        }, this);
+                    } else if(null != this.obj && typeof this.obj == 'object') {
+
+                        var notMatchedProps = [], matchedProps = [];
+                        util.forEach(this.obj, function(value, name) {
+                            if(other.exec(value)) matchedProps.push(util.formatProp(name));
+                            else notMatchedProps.push(util.formatProp(name) + ' (' + i(value) + ')');
+                        }, this);
+
+                        if(notMatchedProps.length)
+                            this.params.operator += '\n    not matched properties: ' + notMatchedProps.join(', ');
+                        if(matchedProps.length)
+                            this.params.operator += '\n    matched properties: ' + matchedProps.join(', ');
+
+                        this.assert(notMatchedProps.length == 0);
+                    } // should we try to convert to String and exec?
+                } else if(typeof other == 'function') {
+                    var res;
+
+                    res = other(this.obj);
+
+                    //if(res instanceof Assertion) {
+                    //  this.params.operator += '\n    ' + res.getMessage();
+                    //}
+
+                    //if we throw exception ok - it is used .should inside
+                    if(typeof res == 'boolean') {
+                        this.assert(res); // if it is just boolean function assert on it
+                    }
+                } else if(other != null && typeof other == 'object') { // try to match properties (for Object and Array)
+                    notMatchedProps = [];
+                    matchedProps = [];
+
+                    util.forEach(other, function(value, key) {
+                        try {
+                            should(this.obj[key]).match(value);
+                            matchedProps.push(util.formatProp(key));
+                        } catch(e) {
+                            if(e instanceof should.AssertionError) {
+                                notMatchedProps.push(util.formatProp(key) + ' (' + i(this.obj[key]) + ')');
+                            } else {
+                                throw e;
+                            }
+                        }
+                    }, this);
+
+                    if(notMatchedProps.length)
+                        this.params.operator += '\n    not matched properties: ' + notMatchedProps.join(', ');
+                    if(matchedProps.length)
+                        this.params.operator += '\n    matched properties: ' + matchedProps.join(', ');
+
+                    this.assert(notMatchedProps.length == 0);
+                } else {
+                    this.assert(false);
+                }
+            }
+        });
+
+        /**
+         * Asserts if given object values or array elements all match `other` object, using some assumptions:
+         * First object matched if they are equal,
+         * If `other` is a regexp - matching with regexp
+         * If `other` is a function check if this function throws AssertionError on given object or return false - it will be assumed as not matched
+         * All other cases check if this `other` equal to each element
+         *
+         * @name matchEach
+         * @memberOf Assertion
+         * @category assertion matching
+         * @param {*} other Object to match
+         * @param {string} [description] Optional message
+         * @example
+         * [ 'a', 'b', 'c'].should.matchEach(/\w+/);
+         * [ 'a', 'a', 'a'].should.matchEach('a');
+         *
+         * [ 'a', 'a', 'a'].should.matchEach(function(value) { value.should.be.eql('a') });
+         *
+         * { a: 'a', b: 'a', c: 'a' }.should.matchEach(function(value) { value.should.be.eql('a') });
+         */
+        Assertion.add('matchEach', function(other, description) {
+            this.params = {operator: 'to match each ' + i(other), message: description};
+
+            var f = other;
+
+            if(other instanceof RegExp)
+                f = function(it) {
+                    return !!other.exec(it);
+                };
+            else if(typeof other != 'function')
+                f = function(it) {
+                    return eql(it, other).result;
+                };
+
+            util.forEach(this.obj, function(value, key) {
+                var res = f(value, key);
+
+                //if we throw exception ok - it is used .should inside
+                if(typeof res == 'boolean') {
+                    this.assert(res); // if it is just boolean function assert on it
+                }
+            }, this);
+        });
+
+        /**
+         * Asserts if any of given object values or array elements match `other` object, using some assumptions:
+         * First object matched if they are equal,
+         * If `other` is a regexp - matching with regexp
+         * If `other` is a function check if this function throws AssertionError on given object or return false - it will be assumed as not matched
+         * All other cases check if this `other` equal to each element
+         *
+         * @name matchAny
+         * @memberOf Assertion
+         * @category assertion matching
+         * @param {*} other Object to match
+         * @param {string} [description] Optional message
+         * @example
+         * [ 'a', 'b', 'c'].should.matchAny(/\w+/);
+         * [ 'a', 'b', 'c'].should.matchAny('a');
+         *
+         * [ 'a', 'b', 'c'].should.matchAny(function(value) { value.should.be.eql('a') });
+         *
+         * { a: 'a', b: 'b', c: 'c' }.should.matchAny(function(value) { value.should.be.eql('a') });
+         */
+        Assertion.add('matchAny', function(other, description) {
+            this.params = {operator: 'to match any ' + i(other), message: description};
+
+            var f = other;
+
+            if(other instanceof RegExp) {
+                f = function(it) {
+                    return !!other.exec(it);
+                };
+            } else if(typeof other != 'function') {
+                f = function(it) {
+                    return eql(it, other).result;
+                };
+            }
+
+            this.assert(util.some(this.obj, function(value, key) {
+                try {
+                    var result = f(value, key);
+
+                    if(typeof result == 'boolean') {
+                        return result; // if it is just boolean, return it
+                    }
+
+                    // Else return true - no exception was thrown, so assume it succeeded
+                    return true;
+                } catch(e) {
+                    if(e instanceof should.AssertionError) {
+                        // Caught an AssertionError, return false to the iterator
+                        return false;
+                    } else {
+                        throw e;
+                    }
+                }
+            }, this));
+        });
+    };
+
+},{"../util":17,"should-equal":18}],13:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+
+    module.exports = function(should, Assertion) {
+
+        /**
+         * Assert given object is NaN
+         * @name NaN
+         * @memberOf Assertion
+         * @category assertion numbers
+         * @example
+         *
+         * (10).should.not.be.NaN;
+         * NaN.should.be.NaN;
+         */
+        Assertion.add('NaN', function() {
+            this.params = { operator: 'to be NaN' };
+
+            this.assert(this.obj !== this.obj);
+        }, true);
+
+        /**
+         * Assert given object is not finite (positive or negative)
+         *
+         * @name Infinity
+         * @memberOf Assertion
+         * @category assertion numbers
+         * @example
+         *
+         * (10).should.not.be.Infinity;
+         * NaN.should.not.be.Infinity;
+         */
+        Assertion.add('Infinity', function() {
+            this.params = { operator: 'to be Infinity' };
+
+            this.is.a.Number
+                .and.not.a.NaN
+                .and.assert(!isFinite(this.obj));
+        }, true);
+
+        /**
+         * Assert given number between `start` and `finish` or equal one of them.
+         *
+         * @name within
+         * @memberOf Assertion
+         * @category assertion numbers
+         * @param {number} start Start number
+         * @param {number} finish Finish number
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * (10).should.be.within(0, 20);
+         */
+        Assertion.add('within', function(start, finish, description) {
+            this.params = { operator: 'to be within ' + start + '..' + finish, message: description };
+
+            this.assert(this.obj >= start && this.obj <= finish);
+        });
+
+        /**
+         * Assert given number near some other `value` within `delta`
+         *
+         * @name approximately
+         * @memberOf Assertion
+         * @category assertion numbers
+         * @param {number} value Center number
+         * @param {number} delta Radius
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * (9.99).should.be.approximately(10, 0.1);
+         */
+        Assertion.add('approximately', function(value, delta, description) {
+            this.params = { operator: 'to be approximately ' + value + " ±" + delta, message: description };
+
+            this.assert(Math.abs(this.obj - value) <= delta);
+        });
+
+        /**
+         * Assert given number above `n`.
+         *
+         * @name above
+         * @alias Assertion#greaterThan
+         * @memberOf Assertion
+         * @category assertion numbers
+         * @param {number} n Margin number
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * (10).should.be.above(0);
+         */
+        Assertion.add('above', function(n, description) {
+            this.params = { operator: 'to be above ' + n, message: description };
+
+            this.assert(this.obj > n);
+        });
+
+        /**
+         * Assert given number below `n`.
+         *
+         * @name below
+         * @alias Assertion#lessThan
+         * @memberOf Assertion
+         * @category assertion numbers
+         * @param {number} n Margin number
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * (0).should.be.above(10);
+         */
+        Assertion.add('below', function(n, description) {
+            this.params = { operator: 'to be below ' + n, message: description };
+
+            this.assert(this.obj < n);
+        });
+
+        Assertion.alias('above', 'greaterThan');
+        Assertion.alias('below', 'lessThan');
+
+    };
+
+},{}],14:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+
+    var util = require('../util');
+    var eql = require('should-equal');
+
+    var aSlice = Array.prototype.slice;
+
+    module.exports = function(should, Assertion) {
+        var i = should.format;
+        /**
+         * Asserts given object has some descriptor. **On success it change given object to be value of property**.
+         *
+         * @name propertyWithDescriptor
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {string} name Name of property
+         * @param {Object} desc Descriptor like used in Object.defineProperty (not required to add all properties)
+         * @example
+         *
+         * ({ a: 10 }).should.have.propertyWithDescriptor('a', { enumerable: true });
+         */
+        Assertion.add('propertyWithDescriptor', function(name, desc) {
+            this.params = {actual: this.obj, operator: 'to have own property with descriptor ' + i(desc)};
+            var obj = this.obj;
+            this.have.ownProperty(name);
+            should(Object.getOwnPropertyDescriptor(Object(obj), name)).have.properties(desc);
+        });
+
+        function processPropsArgs() {
+            var args = {};
+            if(arguments.length > 1) {
+                args.names = aSlice.call(arguments);
+            } else {
+                var arg = arguments[0];
+                var t = should.type(arg);
+                if(t == should.type.STRING) {
+                    args.names = [arg];
+                } else if(util.isIndexable(arg)) {
+                    args.names = arg;
+                } else {
+                    args.names = Object.keys(arg);
+                    args.values = arg;
+                }
+            }
+            return args;
+        }
+
+
+        /**
+         * Asserts given object has enumerable property with optionally value. **On success it change given object to be value of property**.
+         *
+         * @name enumerable
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {string} name Name of property
+         * @param {*} [val] Optional property value to check
+         * @example
+         *
+         * ({ a: 10 }).should.have.enumerable('a');
+         */
+        Assertion.add('enumerable', function(name, val) {
+            name = util.convertPropertyName(name);
+
+            this.params = {
+                operator: "to have enumerable property " + util.formatProp(name) + (arguments.length > 1 ? " equal to " + i(val): "")
+            };
+
+            var desc = { enumerable: true };
+            if(arguments.length > 1) desc.value = val;
+            this.have.propertyWithDescriptor(name, desc);
+        });
+
+        /**
+         * Asserts given object has enumerable properties
+         *
+         * @name enumerables
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {Array|...string|Object} names Names of property
+         * @example
+         *
+         * ({ a: 10, b: 10 }).should.have.enumerables('a');
+         */
+        Assertion.add('enumerables', function(names) {
+            var args = processPropsArgs.apply(null, arguments);
+
+            this.params = {
+                operator: "to have enumerables " + args.names.map(util.formatProp)
+            };
+
+            var obj = this.obj;
+            args.names.forEach(function(name) {
+                obj.should.have.enumerable(name);
+            });
+        });
+
+        /**
+         * Asserts given object has property with optionally value. **On success it change given object to be value of property**.
+         *
+         * @name property
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {string} name Name of property
+         * @param {*} [val] Optional property value to check
+         * @example
+         *
+         * ({ a: 10 }).should.have.property('a');
+         */
+        Assertion.add('property', function(name, val) {
+            name = util.convertPropertyName(name);
+            if(arguments.length > 1) {
+                var p = {};
+                p[name] = val;
+                this.have.properties(p);
+            } else {
+                this.have.properties(name);
+            }
+            this.obj = this.obj[name];
+        });
+
+        /**
+         * Asserts given object has properties. On this method affect .any modifier, which allow to check not all properties.
+         *
+         * @name properties
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {Array|...string|Object} names Names of property
+         * @example
+         *
+         * ({ a: 10 }).should.have.properties('a');
+         * ({ a: 10, b: 20 }).should.have.properties([ 'a' ]);
+         * ({ a: 10, b: 20 }).should.have.properties({ b: 20 });
+         */
+        Assertion.add('properties', function(names) {
+            var values = {};
+            if(arguments.length > 1) {
+                names = aSlice.call(arguments);
+            } else if(!Array.isArray(names)) {
+                if(typeof names == 'string' || typeof names == 'symbol') {
+                    names = [names];
+                } else {
+                    values = names;
+                    names = Object.keys(names);
+                }
+            }
+
+            var obj = Object(this.obj), missingProperties = [];
+
+            //just enumerate properties and check if they all present
+            names.forEach(function(name) {
+                if(!(name in obj)) missingProperties.push(util.formatProp(name));
+            });
+
+            var props = missingProperties;
+            if(props.length === 0) {
+                props = names.map(util.formatProp);
+            } else if(this.anyOne) {
+                props = names.filter(function(name) {
+                    return missingProperties.indexOf(util.formatProp(name)) < 0;
+                }).map(util.formatProp);
+            }
+
+            var operator = (props.length === 1 ?
+                    'to have property ' : 'to have ' + (this.anyOne ? 'any of ' : '') + 'properties ') + props.join(', ');
+
+            this.params = {obj: this.obj, operator: operator};
+
+            //check that all properties presented
+            //or if we request one of them that at least one them presented
+            this.assert(missingProperties.length === 0 || (this.anyOne && missingProperties.length != names.length));
+
+            // check if values in object matched expected
+            var valueCheckNames = Object.keys(values);
+            if(valueCheckNames.length) {
+                var wrongValues = [];
+                props = [];
+
+                // now check values, as there we have all properties
+                valueCheckNames.forEach(function(name) {
+                    var value = values[name];
+                    if(!eql(obj[name], value).result) {
+                        wrongValues.push(util.formatProp(name) + ' of ' + i(value) + ' (got ' + i(obj[name]) + ')');
+                    } else {
+                        props.push(util.formatProp(name) + ' of ' + i(value));
+                    }
+                });
+
+                if((wrongValues.length !== 0 && !this.anyOne) || (this.anyOne && props.length === 0)) {
+                    props = wrongValues;
+                }
+
+                operator = (props.length === 1 ?
+                    'to have property ' : 'to have ' + (this.anyOne ? 'any of ' : '') + 'properties ') + props.join(', ');
+
+                this.params = {obj: this.obj, operator: operator};
+
+                //if there is no not matched values
+                //or there is at least one matched
+                this.assert(wrongValues.length === 0 || (this.anyOne && wrongValues.length != valueCheckNames.length));
+            }
+        });
+
+        /**
+         * Asserts given object has property `length` with given value `n`
+         *
+         * @name length
+         * @alias Assertion#lengthOf
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {number} n Expected length
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * [1, 2].should.have.length(2);
+         */
+        Assertion.add('length', function(n, description) {
+            this.have.property('length', n, description);
+        });
+
+        Assertion.alias('length', 'lengthOf');
+
+        var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+        /**
+         * Asserts given object has own property. **On success it change given object to be value of property**.
+         *
+         * @name ownProperty
+         * @alias Assertion#hasOwnProperty
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {string} name Name of property
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * ({ a: 10 }).should.have.ownProperty('a');
+         */
+        Assertion.add('ownProperty', function(name, description) {
+            name = util.convertPropertyName(name);
+            this.params = {
+                actual: this.obj,
+                operator: 'to have own property ' + util.formatProp(name),
+                message: description
+            };
+
+            this.assert(hasOwnProperty.call(this.obj, name));
+
+            this.obj = this.obj[name];
+        });
+
+        Assertion.alias('ownProperty', 'hasOwnProperty');
+
+        /**
+         * Asserts given object is empty. For strings, arrays and arguments it checks .length property, for objects it checks keys.
+         *
+         * @name empty
+         * @memberOf Assertion
+         * @category assertion property
+         * @example
+         *
+         * ''.should.be.empty;
+         * [].should.be.empty;
+         * ({}).should.be.empty;
+         */
+        Assertion.add('empty', function() {
+            this.params = {operator: 'to be empty'};
+
+            if(util.length(this.obj) !== void 0) {
+                this.obj.should.have.property('length', 0);
+            } else {
+                var obj = Object(this.obj); // wrap to reference for booleans and numbers
+                for(var prop in obj) {
+                    this.obj.should.not.have.ownProperty(prop);
+                }
+            }
+        }, true);
+
+        /**
+         * Asserts given object has exact keys. Compared to `properties`, `keys` does not accept Object as a argument.
+         *
+         * @name keys
+         * @alias Assertion#key
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {Array|...string} [keys] Keys to check
+         * @example
+         *
+         * ({ a: 10 }).should.have.keys('a');
+         * ({ a: 10, b: 20 }).should.have.keys('a', 'b');
+         * ({ a: 10, b: 20 }).should.have.keys([ 'a', 'b' ]);
+         * ({}).should.have.keys();
+         */
+        Assertion.add('keys', function(keys) {
+            if(arguments.length > 1) keys = aSlice.call(arguments);
+            else if(arguments.length === 1 && should.type(keys) == should.type.STRING) keys = [keys];
+            else if(arguments.length === 0) keys = [];
+
+            keys = keys.map(String);
+
+            var obj = Object(this.obj);
+
+            // first check if some keys are missing
+            var missingKeys = [];
+            keys.forEach(function(key) {
+                if(!hasOwnProperty.call(this.obj, key))
+                    missingKeys.push(util.formatProp(key));
+            }, this);
+
+            // second check for extra keys
+            var extraKeys = [];
+            Object.keys(obj).forEach(function(key) {
+                if(keys.indexOf(key) < 0) {
+                    extraKeys.push(util.formatProp(key));
+                }
+            });
+
+            var verb = keys.length === 0 ? 'to be empty' :
+            'to have ' + (keys.length === 1 ? 'key ' : 'keys ');
+
+            this.params = {operator: verb + keys.map(util.formatProp).join(', ')};
+
+            if(missingKeys.length > 0)
+                this.params.operator += '\n\tmissing keys: ' + missingKeys.join(', ');
+
+            if(extraKeys.length > 0)
+                this.params.operator += '\n\textra keys: ' + extraKeys.join(', ');
+
+            this.assert(missingKeys.length === 0 && extraKeys.length === 0);
+        });
+
+        Assertion.alias("keys", "key");
+
+        /**
+         * Asserts given object has nested property in depth by path. **On success it change given object to be value of final property**.
+         *
+         * @name propertyByPath
+         * @memberOf Assertion
+         * @category assertion property
+         * @param {Array|...string} properties Properties path to search
+         * @example
+         *
+         * ({ a: {b: 10}}).should.have.propertyByPath('a', 'b').eql(10);
+         */
+        Assertion.add('propertyByPath', function(properties) {
+            if(arguments.length > 1) properties = aSlice.call(arguments);
+            else if(arguments.length === 1 && typeof properties == 'string') properties = [properties];
+            else if(arguments.length === 0) properties = [];
+
+            var allProps = properties.map(util.formatProp);
+
+            properties = properties.map(String);
+
+            var obj = should(Object(this.obj));
+
+            var foundProperties = [];
+
+            var currentProperty;
+            while(currentProperty = properties.shift()) {
+                this.params = {operator: 'to have property by path ' + allProps.join(', ') + ' - failed on ' + util.formatProp(currentProperty)};
+                obj = obj.have.property(currentProperty);
+                foundProperties.push(currentProperty);
+            }
+
+            this.params = {obj: this.obj, operator: 'to have property by path ' + allProps.join(', ')};
+
+            this.obj = obj.obj;
+        });
+    };
+
+},{"../util":17,"should-equal":18}],15:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+
+    module.exports = function(should, Assertion) {
+        /**
+         * Assert given string starts with prefix
+         * @name startWith
+         * @memberOf Assertion
+         * @category assertion strings
+         * @param {string} str Prefix
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * 'abc'.should.startWith('a');
+         */
+        Assertion.add('startWith', function(str, description) {
+            this.params = { operator: 'to start with ' + should.format(str), message: description };
+
+            this.assert(0 === this.obj.indexOf(str));
+        });
+
+        /**
+         * Assert given string starts with prefix
+         * @name endWith
+         * @memberOf Assertion
+         * @category assertion strings
+         * @param {string} str Prefix
+         * @param {string} [description] Optional message
+         * @example
+         *
+         * 'abca'.should.endWith('a');
+         */
+        Assertion.add('endWith', function(str, description) {
+            this.params = { operator: 'to end with ' + should.format(str), message: description };
+
+            this.assert(this.obj.indexOf(str, this.obj.length - str.length) >= 0);
+        });
+    };
+},{}],16:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+
+    var util = require('../util');
+
+    module.exports = function(should, Assertion) {
+        /**
+         * Assert given object is number
+         * @name Number
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('Number', function() {
+            this.params = {operator: 'to be a number'};
+
+            this.have.type('number');
+        }, true);
+
+        /**
+         * Assert given object is arguments
+         * @name arguments
+         * @alias Assertion#Arguments
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('arguments', function() {
+            this.params = {operator: 'to be arguments'};
+
+            this.have.class('Arguments');
+        }, true);
+
+        Assertion.alias('arguments', 'Arguments');
+
+        /**
+         * Assert given object has some type using `typeof`
+         * @name type
+         * @memberOf Assertion
+         * @param {string} type Type name
+         * @param {string} [description] Optional message
+         * @category assertion types
+         */
+        Assertion.add('type', function(type, description) {
+            this.params = {operator: 'to have type ' + type, message: description};
+
+            should(typeof this.obj).be.exactly(type);
+        });
+
+        /**
+         * Assert given object is instance of `constructor`
+         * @name instanceof
+         * @alias Assertion#instanceOf
+         * @memberOf Assertion
+         * @param {Function} constructor Constructor function
+         * @param {string} [description] Optional message
+         * @category assertion types
+         */
+        Assertion.add('instanceof', function(constructor, description) {
+            this.params = {operator: 'to be an instance of ' + util.functionName(constructor), message: description};
+
+            this.assert(Object(this.obj) instanceof constructor);
+        });
+
+        Assertion.alias('instanceof', 'instanceOf');
+
+        /**
+         * Assert given object is function
+         * @name Function
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('Function', function() {
+            this.params = {operator: 'to be a function'};
+
+            this.have.type('function');
+        }, true);
+
+        /**
+         * Assert given object is object
+         * @name Object
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('Object', function() {
+            this.params = {operator: 'to be an object'};
+
+            this.is.not.null.and.have.type('object');
+        }, true);
+
+        /**
+         * Assert given object is string
+         * @name String
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('String', function() {
+            this.params = {operator: 'to be a string'};
+
+            this.have.type('string');
+        }, true);
+
+        /**
+         * Assert given object is array
+         * @name Array
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('Array', function() {
+            this.params = {operator: 'to be an array'};
+
+            this.have.class('Array');
+        }, true);
+
+        /**
+         * Assert given object is boolean
+         * @name Boolean
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('Boolean', function() {
+            this.params = {operator: 'to be a boolean'};
+
+            this.have.type('boolean');
+        }, true);
+
+        /**
+         * Assert given object is error
+         * @name Error
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('Error', function() {
+            this.params = {operator: 'to be an error'};
+
+            this.have.instanceOf(Error);
+        }, true);
+
+        /**
+         * Assert given object is null
+         * @name null
+         * @alias Assertion#Null
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('null', function() {
+            this.params = {operator: 'to be null'};
+
+            this.assert(this.obj === null);
+        }, true);
+
+        Assertion.alias('null', 'Null');
+
+        /**
+         * Assert given object has some internal [[Class]], via Object.prototype.toString call
+         * @name class
+         * @alias Assertion#Class
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('class', function(cls) {
+            this.params = {operator: 'to have [[Class]] ' + cls};
+
+            this.assert(Object.prototype.toString.call(this.obj) === '[object ' + cls + ']');
+        });
+
+        Assertion.alias('class', 'Class');
+
+        /**
+         * Assert given object is undefined
+         * @name undefined
+         * @alias Assertion#Undefined
+         * @memberOf Assertion
+         * @category assertion types
+         */
+        Assertion.add('undefined', function() {
+            this.params = {operator: 'to be undefined'};
+
+            this.assert(this.obj === void 0);
+        }, true);
+
+        Assertion.alias('undefined', 'Undefined');
+
+        /**
+         * Assert given object supports es6 iterable protocol (just check
+         * that object has property Symbol.iterator, which is a function)
+         * @name iterable
+         * @memberOf Assertion
+         * @category assertion es6
+         */
+        Assertion.add('iterable', function() {
+            this.params = {operator: 'to be iterable'};
+
+            this.obj.should.have.property(Symbol.iterator).which.is.a.Function;
+        }, true);
+
+        /**
+         * Assert given object supports es6 iterator protocol (just check
+         * that object has property next, which is a function)
+         * @name iterator
+         * @memberOf Assertion
+         * @category assertion es6
+         */
+        Assertion.add('iterator', function() {
+            this.params = {operator: 'to be iterator'};
+
+            this.obj.should.have.property('next').which.is.a.Function;
+        }, true);
+
+        /**
+         * Assert given object is a generator object
+         * @name generator
+         * @memberOf Assertion
+         * @category assertion es6
+         */
+        Assertion.add('generator', function() {
+            this.params = {operator: 'to be generator'};
+
+            this.obj.should.be.iterable
+                .and.iterator
+                .and.it.is.equal(this.obj[Symbol.iterator]());
+        }, true);
+    };
+
+},{"../util":17}],17:[function(require,module,exports){
+    /*!
+     * Should
+     * Copyright(c) 2010-2014 TJ Holowaychuk <tj@vision-media.ca>
+     * MIT Licensed
+     */
+
+    var type = require('should-type');
+
+    /**
+     * Check if given obj just a primitive type wrapper
+     * @param {Object} obj
+     * @returns {boolean}
+     * @private
+     */
+    exports.isWrapperType = function(obj) {
+        return obj instanceof Number || obj instanceof String || obj instanceof Boolean;
+    };
+
+    exports.merge = function(a, b) {
+        if(a && b) {
+            for(var key in b) {
+                a[key] = b[key];
+            }
+        }
+        return a;
+    };
+
+    var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+    exports.forEach = function forEach(obj, f, context) {
+        if(exports.isGeneratorFunction(obj)) {
+            return forEach(obj(), f, context);
+        } else if (exports.isGeneratorObject(obj)) {
+            var value = obj.next();
+            while(!value.done) {
+                if(f.call(context, value.value, 'value', obj) === false)
+                    return;
+                value = obj.next();
+            }
+        } else {
+            for(var prop in obj) {
+                if(hasOwnProperty.call(obj, prop)) {
+                    if(f.call(context, obj[prop], prop, obj) === false)
+                        return;
+                }
+            }
+        }
+    };
+
+    exports.some = function(obj, f, context) {
+        var res = false;
+        exports.forEach(obj, function(value, key) {
+            if(f.call(context, value, key, obj)) {
+                res = true;
                 return false;
             }
+        }, context);
+        return res;
+    };
 
+    var functionNameRE = /^\s*function\s*(\S*)\s*\(/;
+
+    exports.functionName = function(f) {
+        if(f.name) {
+            return f.name;
+        }
+        var name = f.toString().match(functionNameRE)[1];
+        return name;
+    };
+
+    var formatPropertyName = require('should-format').formatPropertyName;
+
+    exports.formatProp = function(value) {
+        return formatPropertyName(String(value));
+    };
+
+
+    exports.isEmptyObject = function(obj) {
+        for(var prop in obj) {
+            if(hasOwnProperty.call(obj, prop)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    exports.isIndexable = function(obj) {
+        var t = type(obj);
+        return t == type.ARRAY ||
+            t == type.BUFFER ||
+            t == type.ARGUMENTS ||
+            t == type.ARRAY_BUFFER ||
+            t == type.TYPED_ARRAY ||
+            t == type.DATA_VIEW ||
+            t == type.STRING;
+    };
+
+    exports.length = function(obj) {
+        switch(type(obj)) {
+            case type.ARRAY_BUFFER:
+            case type.TYPED_ARRAY:
+            case type.DATA_VIEW:
+                return obj.byteLength;
+
+            case type.ARRAY:
+            case type.BUFFER:
+            case type.ARGUMENTS:
+            case type.FUNCTION:
+            case type.STRING:
+                return obj.length;
+        }
+    };
+
+    exports.convertPropertyName = function(name) {
+        if(typeof name == 'symbol') {
+            return name;
+        } else {
+            return String(name);
+        }
+    };
+
+    exports.isGeneratorObject = function(obj) {
+        if(!obj) return false;
+
+        return typeof obj.next == 'function' &&
+            typeof obj[Symbol.iterator] == 'function' &&
+            obj[Symbol.iterator]() === obj;
+    };
+
+//TODO find better way
+    exports.isGeneratorFunction = function(f) {
+        if(typeof f != 'function') return false;
+
+        return /^function\s*\*\s*/.test(f.toString());
+    }
+},{"should-format":19,"should-type":20}],18:[function(require,module,exports){
+    var getType = require('should-type');
+    var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+    function makeResult(r, path, reason, a, b) {
+        var o = {result: r};
+        if(!r) {
+            o.path = path;
+            o.reason = reason;
+            o.a = a;
+            o.b = b;
+        }
+        return o;
     }
 
-    // compare deep objects and arrays
-    stackA || (stackA = []);
-    stackB || (stackB = []);
+    var EQUALS = makeResult(true);
 
-    var length = stackA.length;
-    while (length--) {
-        if (stackA[length] == a) {
-            return stackB[length] == b;
+    function format(msg) {
+        var args = arguments;
+        for(var i = 1, l = args.length; i < l; i++) {
+            msg = msg.replace(/%s/, args[i]);
+        }
+        return msg;
+    }
+
+    var REASON = {
+        PLUS_0_AND_MINUS_0: '+0 is not equal to -0',
+        DIFFERENT_TYPES: 'A has type %s and B has type %s',
+        NAN_NUMBER: 'NaN is not equal to any number',
+        EQUALITY: 'A is not equal to B',
+        EQUALITY_PROTOTYPE: 'A and B have different prototypes',
+        WRAPPED_VALUE: 'A wrapped value is not equal to B wrapped value',
+        FUNCTION_SOURCES: 'function A is not equal to B by source code value (via .toString call)',
+        MISSING_KEY: '%s has no key %s',
+        CIRCULAR_VALUES: 'A has circular reference that was visited not in the same time as B'
+    };
+
+    function eqInternal(a, b, opts, stackA, stackB, path, fails) {
+        var r = EQUALS;
+
+        function result(comparison, reason) {
+            var res = makeResult(comparison, path, reason, a, b);
+            if(!comparison && opts.collectAllFails) {
+                fails.push(res);
+            }
+            return res;
+        }
+
+        function checkPropertyEquality(property) {
+            return eqInternal(a[property], b[property], opts, stackA, stackB, path.concat([property]), fails);
+        }
+
+        // equal a and b exit early
+        if(a === b) {
+            // check for +0 !== -0;
+            return result(a !== 0 || (1 / a == 1 / b), REASON.PLUS_0_AND_MINUS_0);
+        }
+
+        var l, p;
+
+        var typeA = getType(a),
+            typeB = getType(b);
+
+        // if objects has different types they are not equals
+        if(typeA !== typeB) return result(false, format(REASON.DIFFERENT_TYPES, typeA, typeB));
+
+        switch(typeA) {
+            case 'number':
+                return (a !== a) ? result(b !== b, REASON.NAN_NUMBER)
+                    // but treat `+0` vs. `-0` as not equal
+                    : (a === 0 ? result(1 / a === 1 / b, REASON.PLUS_0_AND_MINUS_0) : result(a === b, REASON.EQUALITY));
+
+            case 'regexp':
+                p = ['source', 'global', 'multiline', 'lastIndex', 'ignoreCase'];
+                while(p.length) {
+                    r = checkPropertyEquality(p.shift());
+                    if(!opts.collectAllFails && !r.result) return r;
+                }
+                break;
+
+            case 'boolean':
+            case 'string':
+                return result(a === b, REASON.EQUALITY);
+
+            case 'date':
+                if(+a !== +b && !opts.collectAllFails) {
+                    return result(false, REASON.EQUALITY);
+                }
+                break;
+
+            case 'object-number':
+            case 'object-boolean':
+            case 'object-string':
+                r = eqInternal(a.valueOf(), b.valueOf(), opts, stackA, stackB, path, fails);
+                if(!r.result && !opts.collectAllFails) {
+                    r.reason = REASON.WRAPPED_VALUE;
+                    return r;
+                }
+                break;
+
+            case 'buffer':
+                r = checkPropertyEquality('length');
+                if(!opts.collectAllFails && !r.result) return r;
+
+                l = a.length;
+                while(l--) {
+                    r = checkPropertyEquality(l);
+                    if(!opts.collectAllFails && !r.result) return r;
+                }
+
+                return EQUALS;
+
+            case 'error':
+                p = ['name', 'message'];
+                while(p.length) {
+                    r = checkPropertyEquality(p.shift());
+                    if(!opts.collectAllFails && !r.result) return r;
+                }
+
+                break;
+        }
+
+        // compare deep objects and arrays
+        // stacks contain references only
+        stackA || (stackA = []);
+        stackB || (stackB = []);
+
+        l = stackA.length;
+        while(l--) {
+            if(stackA[l] == a) {
+                return result(stackB[l] == b, REASON.CIRCULAR_VALUES);
+            }
+        }
+
+        // add `a` and `b` to the stack of traversed objects
+        stackA.push(a);
+        stackB.push(b);
+
+        var hasProperty,
+            keysComparison,
+            key;
+
+        if(typeA === 'array' || typeA === 'arguments' || typeA === 'typed-array') {
+            r = checkPropertyEquality('length');
+            if(!opts.collectAllFails && !r.result) return r;
+        }
+
+        if(typeA === 'array-buffer' || typeA === 'typed-array') {
+            r = checkPropertyEquality('byteLength');
+            if(!opts.collectAllFails && !r.result) return r;
+        }
+
+        if(typeB === 'function') {
+            var fA = a.toString(), fB = b.toString();
+            r = eqInternal(fA, fB, opts, stackA, stackB, path, fails);
+            r.reason = REASON.FUNCTION_SOURCES;
+            if(!opts.collectAllFails && !r.result) return r;
+        }
+
+        for(key in b) {
+            if(hasOwnProperty.call(b, key)) {
+                r = result(hasOwnProperty.call(a, key), format(REASON.MISSING_KEY, 'A', key));
+                if(!r.result && !opts.collectAllFails) {
+                    return r;
+                }
+
+                if(r.result) {
+                    r = checkPropertyEquality(key);
+                    if(!r.result && !opts.collectAllFails) {
+                        return r;
+                    }
+                }
+            }
+        }
+
+        // ensure both objects have the same number of properties
+        for(key in a) {
+            if(hasOwnProperty.call(a, key)) {
+                r = result(hasOwnProperty.call(b, key), format(REASON.MISSING_KEY, 'B', key));
+                if(!r.result && !opts.collectAllFails) {
+                    return r;
+                }
+            }
+        }
+
+        stackA.pop();
+        stackB.pop();
+
+        var prototypesEquals = false, canComparePrototypes = false;
+
+        if(opts.checkProtoEql) {
+            if(Object.getPrototypeOf) {
+                prototypesEquals = Object.getPrototypeOf(a) === Object.getPrototypeOf(b);
+                canComparePrototypes = true;
+            } else if(a.__proto__ && b.__proto__) {
+                prototypesEquals = a.__proto__ === b.__proto__;
+                canComparePrototypes = true;
+            }
+
+            if(canComparePrototypes && !prototypesEquals && !opts.collectAllFails) {
+                r = result(prototypesEquals, REASON.EQUALITY_PROTOTYPE);
+                r.showReason = true;
+                if(!r.result && !opts.collectAllFails) {
+                    return r;
+                }
+            }
+        }
+
+        if(typeB === 'function') {
+            r = checkPropertyEquality('prototype');
+            if(!r.result && !opts.collectAllFails) return r;
+        }
+
+        return EQUALS;
+    }
+
+    var defaultOptions = {checkProtoEql: true, collectAllFails: false};
+
+    function eq(a, b, opts) {
+        opts = opts || defaultOptions;
+        var fails = [];
+        var r = eqInternal(a, b, opts || defaultOptions, [], [], [], fails);
+        return opts.collectAllFails ? fails : r;
+    }
+
+    module.exports = eq;
+
+    eq.r = REASON;
+
+},{"should-type":20}],19:[function(require,module,exports){
+    var getType = require('should-type');
+
+    function genKeysFunc(f) {
+        return function(value) {
+            var k = f(value);
+            k.sort();
+            return k;
         }
     }
 
-    // add `a` and `b` to the stack of traversed objects
-    stackA.push(a);
-    stackB.push(b);
+//XXX add ability to only inspect some paths
+    var format = function(value, opts) {
+        opts = opts || {};
 
-    var size = 0,
-        result = true,
-        key;
+        if(!('seen' in opts)) opts.seen = [];
+        opts.keys = genKeysFunc('keys' in opts && opts.keys === false ? Object.getOwnPropertyNames : Object.keys);
 
-    if (typeA === ARRAY || typeA === ARGUMENTS) {
-        if (a.length !== b.length) return false;
+        if(!('maxLineLength' in opts)) opts.maxLineLength = 60;
+        if(!('propSep' in opts)) opts.propSep = ',';
+
+        var type = getType(value);
+        return (format.formats[type] || format.formats['object'])(value, opts);
+    };
+
+    module.exports = format;
+
+    format.formats = {};
+
+    function add(t, f) {
+        format.formats[t] = f;
     }
 
-    if (typeB === FUNCTION) {
-        if (a.toString() !== b.toString()) return false;
+    [ 'undefined',  'boolean',  'null'].forEach(function(name) {
+        add(name, String);
+    });
+
+    ['number', 'boolean'].forEach(function(name) {
+        var capName = name.substring(0, 1).toUpperCase() + name.substring(1);
+        add('object-' + name, formatObjectWithPrefix(function(value) {
+            return '[' + capName + ': ' + format(value.valueOf()) + ']';
+        }));
+    });
+
+    add('object-string', function(value, opts) {
+        var realValue = value.valueOf();
+        var prefix = '[String: ' + format(realValue) + ']';
+        var props = opts.keys(value);
+        props = props.filter(function(p) {
+            return !(p.match(/\d+/) && parseInt(p, 10) < realValue.length);
+        });
+
+        if(props.length == 0) return prefix;
+        else return formatObject(value, opts, prefix, props);
+    });
+
+    add('regexp', formatObjectWithPrefix(String));
+
+    add('number', function(value) {
+        if(value === 0 && 1 / value < 0) return '-0';
+        return String(value);
+    });
+
+    add('string', function(value) {
+        return '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
+                .replace(/'/g, "\\'")
+                .replace(/\\"/g, '"') + '\'';
+    });
+
+    add('object', formatObject);
+
+    add('array', function(value, opts) {
+        var keys = opts.keys(value);
+        var len = 0;
+
+        opts.seen.push(value);
+
+        var props = keys.map(function(prop) {
+            var desc;
+            try {
+                desc = Object.getOwnPropertyDescriptor(value, prop) || {value: value[prop]};
+            } catch(e) {
+                desc = {value: e};
+            }
+
+            var f;
+            if(prop.match(/\d+/)) {
+                f = format(desc.value, opts);
+            } else {
+                f = formatProperty(desc.value, opts, prop)
+            }
+            len += f.length;
+            return f;
+        });
+
+        opts.seen.pop();
+
+        if(props.length === 0) return '[]';
+
+        if(len <= opts.maxLineLength) {
+            return '[ ' + props.join(opts.propSep + ' ') + ' ]';
+        } else {
+            return '[' + '\n' + props.map(addSpaces).join(opts.propSep + '\n') + '\n' + ']';
+        }
+    });
+
+    function addSpaces(v) {
+        return v.split('\n').map(function(vv) { return '  ' + vv; }).join('\n');
     }
 
-    for (key in b) {
-        if (hasOwnProperty.call(b, key)) {
-            size++;
+    function formatObject(value, opts, prefix, props) {
+        props = props || opts.keys(value);
 
-            result = result && hasOwnProperty.call(a, key) && eq(a[key], b[key], stackA, stackB);
-            if(!result) return result;
+        var len = 0;
+
+        opts.seen.push(value);
+        props = props.map(function(prop) {
+            var f = formatProperty(value, opts, prop);
+            len += f.length;
+            return f;
+        });
+        opts.seen.pop();
+
+        if(props.length === 0) return '{}';
+
+        if(len <= opts.maxLineLength) {
+            return '{ ' + (prefix ? prefix + ' ' : '') + props.join(opts.propSep + ' ') + ' }';
+        } else {
+            return '{' + '\n' + (prefix ? prefix + '\n' : '') + props.map(addSpaces).join(opts.propSep + '\n') + '\n' + '}';
         }
     }
 
-    // ensure both objects have the same number of properties
-    for (key in a) {
-        if (hasOwnProperty.call(a, key)) {
-            result = result && (--size > -1);
-            if(!result) return result;
+    format.formatPropertyName = function(name, opts) {
+        return name.match(/^[a-zA-Z_$][a-zA-Z_$0-9]*$/) ? name : format(name, opts)
+    };
+
+
+    function formatProperty(value, opts, prop) {
+        var desc;
+        try {
+            desc = Object.getOwnPropertyDescriptor(value, prop) || {value: value[prop]};
+        } catch(e) {
+            desc = {value: e};
+        }
+
+        var propName = format.formatPropertyName(prop, opts);
+
+        var propValue = desc.get && desc.set ?
+            '[Getter/Setter]' : desc.get ?
+            '[Getter]' : desc.set ?
+            '[Setter]' : opts.seen.indexOf(desc.value) >= 0 ?
+            '[Circular]' :
+            format(desc.value, opts);
+
+        return propName + ': ' + propValue;
+    }
+
+
+    function pad2Zero(n) {
+        return n < 10 ? '0' + n : '' + n;
+    }
+
+    function pad3Zero(n) {
+        return n < 100 ? '0' + pad2Zero(n) : '' + n;
+    }
+
+    function formatDate(value) {
+        var to = value.getTimezoneOffset();
+        var absTo = Math.abs(to);
+        var hours = Math.floor(absTo / 60);
+        var minutes = absTo - hours * 60;
+        var tzFormat = 'GMT' + (to < 0 ? '+' : '-') + pad2Zero(hours) + pad2Zero(minutes);
+        return value.toLocaleDateString() + ' ' + value.toLocaleTimeString() + '.' + pad3Zero(value.getMilliseconds()) + ' ' + tzFormat;
+    }
+
+    function formatObjectWithPrefix(f) {
+        return function(value, opts) {
+            var prefix = f(value);
+            var props = opts.keys(value);
+            if(props.length == 0) return prefix;
+            else return formatObject(value, opts, prefix, props);
         }
     }
 
-    stackA.pop();
-    stackB.pop();
+    add('date', formatObjectWithPrefix(formatDate));
 
-    if(typeB === FUNCTION) {
-        result = result && eq(a.prototype, b.prototype);
+    var functionNameRE = /^\s*function\s*(\S*)\s*\(/;
+
+    function functionName(f) {
+        if(f.name) {
+            return f.name;
+        }
+        var name = f.toString().match(functionNameRE)[1];
+        return name;
     }
 
-    return result;
-}
+    add('function', formatObjectWithPrefix(function(value) {
+        var name = functionName(value);
+        return '[Function' + (name ? ': ' + name : '') + ']';
+    }));
 
+    add('error', formatObjectWithPrefix(function(value) {
+        var name = value.name;
+        var message = value.message;
+        return '[' + name + (message ? ': ' + message : '') + ']';
+    }));
 
-module.exports = eq;
+    function generateFunctionForIndexedArray(lengthProp, name) {
+        return function(value) {
+            var str = '';
+            var max = 50;
+            var len = value[lengthProp];
+            if(len > 0) {
+                for(var i = 0; i < max && i < len; i++) {
+                    var b = value[i] || 0;
+                    str += ' ' + pad2Zero(b.toString(16));
+                }
+                if(len > max)
+                    str += ' ... ';
+            }
+            return '[' + (value.constructor.name || name) + (str ? ':' + str : '') + ']';
+        }
+    }
+
+    add('buffer', generateFunctionForIndexedArray('length', 'Buffer'));
+
+    add('array-buffer', generateFunctionForIndexedArray('byteLength'));
+
+    add('typed-array', generateFunctionForIndexedArray('byteLength'));
+
+    add('promise', function(value) {
+        return '[Promise]';
+    });
+
+    add('xhr', function(value) {
+        return '[XMLHttpRequest]';
+    });
+
+    add('html-element', function(value) {
+        return value.outerHTML;
+    });
+
+    add('html-element-text', function(value) {
+        return value.nodeValue;
+    });
+
+    add('document', function(value) {
+        return value.documentElement.outerHTML;
+    });
+
+    add('window', function(value) {
+        return '[Window]';
+    });
+},{"should-type":20}],20:[function(require,module,exports){
+    var toString = Object.prototype.toString;
+
+    var types = {
+        NUMBER: 'number',
+        UNDEFINED: 'undefined',
+        STRING: 'string',
+        BOOLEAN: 'boolean',
+        OBJECT: 'object',
+        FUNCTION: 'function',
+        NULL: 'null',
+        ARRAY: 'array',
+        REGEXP: 'regexp',
+        DATE: 'date',
+        ERROR: 'error',
+        ARGUMENTS: 'arguments',
+        SYMBOL: 'symbol',
+        ARRAY_BUFFER: 'array-buffer',
+        TYPED_ARRAY: 'typed-array',
+        DATA_VIEW: 'data-view',
+        MAP: 'map',
+        SET: 'set',
+        WEAK_SET: 'weak-set',
+        WEAK_MAP: 'weak-map',
+        PROMISE: 'promise',
+
+        WRAPPER_NUMBER: 'object-number',
+        WRAPPER_BOOLEAN: 'object-boolean',
+        WRAPPER_STRING: 'object-string',
+
+// node buffer
+        BUFFER: 'buffer',
+
+// dom html element
+        HTML_ELEMENT: 'html-element',
+        HTML_ELEMENT_TEXT: 'html-element-text',
+        DOCUMENT: 'document',
+        WINDOW: 'window',
+        FILE: 'file',
+        FILE_LIST: 'file-list',
+        BLOB: 'blob',
+
+        XHR: 'xhr'
+    };
+
+    module.exports = function getType(instance) {
+        var type = typeof instance;
+
+        switch(type) {
+            case types.NUMBER:
+                return types.NUMBER;
+            case types.UNDEFINED:
+                return types.UNDEFINED;
+            case types.STRING:
+                return types.STRING;
+            case types.BOOLEAN:
+                return types.BOOLEAN;
+            case types.FUNCTION:
+                return types.FUNCTION;
+            case types.SYMBOL:
+                return types.SYMBOL;
+            case types.OBJECT:
+                if(instance === null) return types.NULL;
+
+                var clazz = toString.call(instance);
+
+                switch(clazz) {
+                    case '[object String]':
+                        return types.WRAPPER_STRING;
+                    case '[object Boolean]':
+                        return types.WRAPPER_BOOLEAN;
+                    case '[object Number]':
+                        return types.WRAPPER_NUMBER;
+                    case '[object Array]':
+                        return types.ARRAY;
+                    case '[object RegExp]':
+                        return types.REGEXP;
+                    case '[object Error]':
+                        return types.ERROR;
+                    case '[object Date]':
+                        return types.DATE;
+                    case '[object Arguments]':
+                        return types.ARGUMENTS;
+                    case '[object Math]':
+                        return types.OBJECT;
+                    case '[object JSON]':
+                        return types.OBJECT;
+                    case '[object ArrayBuffer]':
+                        return types.ARRAY_BUFFER;
+                    case '[object Int8Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object Uint8Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object Uint8ClampedArray]':
+                        return types.TYPED_ARRAY;
+                    case '[object Int16Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object Uint16Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object Int32Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object Uint32Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object Float32Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object Float64Array]':
+                        return types.TYPED_ARRAY;
+                    case '[object DataView]':
+                        return types.DATA_VIEW;
+                    case '[object Map]':
+                        return types.MAP;
+                    case '[object WeakMap]':
+                        return types.WEAK_MAP;
+                    case '[object Set]':
+                        return types.SET;
+                    case '[object WeakSet]':
+                        return types.WEAK_SET;
+                    case '[object Promise]':
+                        return types.PROMISE;
+                    case '[object Window]':
+                        return types.WINDOW;
+                    case '[object HTMLDocument]':
+                        return types.DOCUMENT;
+                    case '[object Blob]':
+                        return types.BLOB;
+                    case '[object File]':
+                        return types.FILE;
+                    case '[object FileList]':
+                        return types.FILE_LIST;
+                    case '[object XMLHttpRequest]':
+                        return types.XHR;
+                    case '[object Text]':
+                        return types.HTML_ELEMENT_TEXT;
+                    default:
+                        if((typeof Promise === types.FUNCTION && instance instanceof Promise) || (getType(instance.then) === types.FUNCTION && instance.then.length >= 2)) {
+                            return types.PROMISE;
+                        }
+
+                        if(typeof Buffer !== 'undefined' && instance instanceof Buffer) {
+                            return types.BUFFER;
+                        }
+
+                        if(/^\[object HTML\w+Element\]$/.test(clazz)) {
+                            return types.HTML_ELEMENT;
+                        }
+
+                        if(clazz === '[object Object]') {
+                            return types.OBJECT;
+                        }
+                }
+        }
+    };
+
+    Object.keys(types).forEach(function(typeName) {
+        module.exports[typeName] = types[typeName];
+    });
 
 },{}]},{},[1])(1)
 });
