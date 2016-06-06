@@ -1,5 +1,9 @@
-var SeSauce = require('../inst/selenium-sauce'),
-    portscanner = require('portscanner'),
+
+var SeSauce;
+try { SeSauce = require('../inst/selenium-sauce'); }
+catch (e) { SeSauce = require('../lib/selenium-sauce'); }
+
+var portscanner = require('portscanner'),
     should = require('./lib/should');
 
 describe('Empty config', function() {
@@ -42,16 +46,18 @@ new SeSauce({
         // Then call `done()` when finished.
         before(function(done) {
             browser.init(function(err) {
-                if(err) return done(err);
-                browser.url('http://localhost:52985/test.html', done);
+                if (err) return done(err);
+                browser.url('http://localhost:52985/test.html').then(function() { done(); }, done);
             });
         });
 
         // Test that the browser title is correct.
         it('should have the correct value', function(done) {
-            browser.getTitle(function(err, title) {
+            browser.getTitle().then(function(title) {
                 title.should.be.exactly('This is test.html!');
                 done();
+            }, function(err) {
+                done(err.message);
             });
         });
 
@@ -99,9 +105,7 @@ new SeSauce({
         // Before any tests run, initialize the browser and load the test page.
         // Then call `done()` when finished.
         before(function(done) {
-            browser.init(function(err) {
-                done(err);
-            });
+            browser.init(done);
         });
 
         // Test that the browser title is correct.

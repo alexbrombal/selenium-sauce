@@ -1,5 +1,9 @@
-var SeSauce = require('../inst/selenium-sauce'),
-    should = require('./lib/should');
+
+var SeSauce;
+try { SeSauce = require('../inst/selenium-sauce'); }
+catch (e) { SeSauce = require('../lib/selenium-sauce'); }
+
+var should = require('./lib/should');
 
 if(!process.env.SAUCE_USERNAME || !process.env.SAUCE_ACCESS_KEY)
     return;
@@ -40,17 +44,16 @@ new SeSauce({
         // Then call `done()` when finished.
         before(function(done) {
             browser.init(function(err) {
-                if(err) throw err;
-                browser.url('http://localhost:8081/test.html', done);
+                browser.url('http://localhost:8081/test.html').then(function() { done(); }, done);
             });
         });
 
         // Test that the browser title is correct.
         it('should have the correct value', function(done) {
-            browser.getTitle(function(err, title) {
+            browser.getTitle().then(function(title) {
                 title.should.be.exactly('This is test.html!');
                 done();
-            });
+            }, done);
         });
 
         // After all tests are done, update the SauceLabs job with the test status,
