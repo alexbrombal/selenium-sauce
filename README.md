@@ -181,11 +181,13 @@ The first parameter to the `SeSauce` constructor is the configuration object. Ea
 
 - `httpServer:` - Options for [HttpServer](#httpserver). These options are passed directly into `httpserver.createServer()`.   
 
-  - `port` - *Non-standard option:* passed into HttpServer's `listen` function as the port on which to listen.
+  - `port:` - *Non-standard option:* passed into HttpServer's `listen` function as the port on which to listen.
 
 - `sauceLabs:` - Options for [SauceLabs](#saucelabs). These options are passed directly into the `SauceLabs()` constructor.
 
 - `sauceConnect:` - Options for [Sauce Connect Launcher](#sauce-connect-launcher). These options are passed directly into the `SauceConnectLauncher()` constructor.
+
+  - `disable:` - *Non-standard option:* disables Sauce Connect Launcher from starting, even if credentials are provided.
 
 - `selenium:` - Options for [Selenium Standalone](#selenium-standalone).
 
