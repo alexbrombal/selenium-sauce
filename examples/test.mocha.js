@@ -41,7 +41,16 @@ describe('Selenium:', function() {
         // After all tests are done, update the SauceLabs job with the test status,
         // and close the browser.
         after(function(done) {
-            browser.passed(this.currentTest.state === 'passed', done);
+            var tests = this.test.parent.tests;
+            for(var i = 0, limit = tests.length; i < limit; i++)
+            {
+                if (tests[i].state === "failed")
+                {
+                    browser.passed(false, done);
+                    return;
+                }
+            }
+            browser.passed(true, done);
         });
 
     });

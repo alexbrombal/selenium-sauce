@@ -58,7 +58,16 @@ new SeSauce({
         // After all tests are done, update the SauceLabs job with the test status,
         // and close the browser.
         after(function(done) {
-            browser.passed(this.currentTest.state === 'passed', done);
+            var tests = this.test.parent.tests;
+            for(var i = 0, limit = tests.length; i < limit; i++)
+            {
+                if (tests[i].state === "failed")
+                {
+                    browser.passed(false, done);
+                    return;
+                }
+            }
+            browser.passed(true, done);
         });
 
     });
@@ -91,8 +100,7 @@ new SeSauce({
         // Then call `done()` when finished.
         before(function(done) {
             browser.init(function(err) {
-                if(err) throw err;
-                done();
+                done(err);
             });
         });
 
@@ -100,7 +108,7 @@ new SeSauce({
         it('should not create port conflict (server has not launched)', function(done) {
             portscanner.checkPortStatus(8123, 'localhost', function (err, status) {
                 status.should.be.exactly('closed');
-                done();
+                done(err);
             });
         });
 
