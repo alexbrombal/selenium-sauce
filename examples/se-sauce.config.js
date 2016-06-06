@@ -26,12 +26,12 @@ module.exports = {
     },
     httpServer: {           // Options for local http server (npmjs.org/package/http-server)
         disable: false,         // Non-standard option; used to skip launching the http server
-        port: 8080              // Non-standard option; it is passed into the httpServer.listen() method
+        port: 52985             // Non-standard option; it is passed into the httpServer.listen() method
     },
     sauceLabs: {            // Options for SauceLabs API wrapper (npmjs.org/package/saucelabs)
     },
     sauceConnect: {         // Options for SauceLabs Connect (npmjs.org/package/sauce-connect-launcher)
-        disable: false,         // Non-standard option; used to disable sauce connect
+        disable: false          // Non-standard option; used to disable sauce connect
     },
     selenium: {             // Options for Selenium Server (npmjs.org/package/selenium-standalone). Only used if you need Selenium running locally.
         args: []                // options to pass to `java -jar selenium-server-standalone-X.XX.X.jar`

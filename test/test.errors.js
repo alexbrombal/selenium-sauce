@@ -13,7 +13,8 @@ new SeSauce({
         }
     },
     httpServer: {
-        root: __dirname
+        root: __dirname,
+        port: 52985
     }
 }, function(browser) {
 

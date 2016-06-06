@@ -20,7 +20,7 @@ describe('Selenium:', function() {
         before(function(done) {
             browser.init(function(err) {
                 if(err) throw err;
-                browser.url('http://localhost:8080/test.html', done);
+                browser.url('http://localhost:52985/test.html', done);
             });
         });
 

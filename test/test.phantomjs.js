@@ -27,7 +27,8 @@ new SeSauce({
         }
     },
     httpServer: {
-        root: __dirname
+        root: __dirname,
+        port: 52985
     }
 }, function(browser) {
 
@@ -41,8 +42,8 @@ new SeSauce({
         // Then call `done()` when finished.
         before(function(done) {
             browser.init(function(err) {
-                if(err) throw err;
-                browser.url('http://localhost:8080/test.html', done);
+                if(err) return done(err);
+                browser.url('http://localhost:52985/test.html', done);
             });
         });
 
