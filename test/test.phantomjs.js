@@ -27,7 +27,7 @@ new SeSauce({
     sauceAccessKey: '',
     webdriver: {
         local: {
-            desiredCapabilities: [ { browserName: 'chrome' }, { browserName: 'phantomjs' } ]
+            desiredCapabilities: [ { browserName: 'phantomjs' } ]
         }
     },
     httpServer: {
