@@ -1,6 +1,6 @@
 {
   "name": "selenium-sauce",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Easily run your Selenium tests in SauceLabs",
   "keywords": "selenium sauce saucelabs webdriverio",
   "homepage": "http://github.com/alexbrombal/selenium-sauce",
@@ -18,19 +18,19 @@
   },
   "devDependencies": {
     "mocha": "*",
-    "mocha-istanbul": "^0.2.0",
+    "mocha-istanbul": "^0.3.0",
     "mocha-multi": "*",
     "istanbul": "*",
     "coveralls": "*",
     "phantomjs-prebuilt": "*"
   },
   "dependencies": {
-    "async": "^1.4.0",
+    "async": "^2.1.0",
     "colors": "^1.1.2",
     "extend": "^3.0.0",
     "http-server": "^0.9.0",
-    "portscanner": "^1.0.0",
-    "sauce-connect-launcher": "^0.14.0",
+    "portscanner": "^2.1.0",
+    "sauce-connect-launcher": "^1.1.0",
     "saucelabs": "^1.2.0",
     "selenium-standalone": "^5.1.0",
     "webdriverio": "^4.0.9"
